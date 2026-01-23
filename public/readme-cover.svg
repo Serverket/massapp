@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">MassApp Cover</title>
+  <desc id="desc">Gradient background featuring the MassApp emblem and headline.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#020617" />
+      <stop offset="50%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e1b4b" />
+    </linearGradient>
+    <radialGradient id="glow" cx="70%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="rgba(56, 189, 248, 0.35)" />
+      <stop offset="35%" stop-color="rgba(99, 102, 241, 0.22)" />
+      <stop offset="100%" stop-color="rgba(30, 64, 175, 0)" />
+    </radialGradient>
+    <radialGradient id="massapp-halo" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.85" />
+      <stop offset="55%" stop-color="#6366f1" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#7c3aed" stop-opacity="1" />
+    </radialGradient>
+    <linearGradient id="massapp-stroke" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc" />
+      <stop offset="100%" stop-color="#cbd5f5" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)" rx="48" />
+  <rect width="1200" height="630" fill="url(#glow)" />
+  <g transform="translate(60 70) scale(1.4)">
+    <circle cx="80" cy="80" r="72" fill="#020617" />
+    <circle cx="80" cy="80" r="64" fill="url(#massapp-halo)" />
+    <path
+      d="M44 112 L44 48 C44 44 47 40 52 40 C55.6 40 58.6 42.1 60 45.4 L80 92 L100 45.4 C101.4 42.1 104.4 40 108 40 C113 40 116 44 116 48 L116 112"
+      fill="none"
+      stroke="url(#massapp-stroke)"
+      stroke-width="12"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M56 112 L56 72 L80 124 L104 72 L104 112"
+      fill="none"
+      stroke="#0f172a"
+      stroke-opacity="0.3"
+      stroke-width="6"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </g>
+  <text x="410" y="250" fill="#e0e7ff" font-family="'Inter', 'Segoe UI', sans-serif" font-size="80" font-weight="700">MassApp</text>
+  <text x="410" y="320" fill="#cbd5f5" font-family="'Inter', 'Segoe UI', sans-serif" font-size="30" font-weight="400">Launch custom WhatsApp campaigns in seconds.</text>
+  <rect x="410" y="360" width="430" height="1" fill="rgba(226, 232, 240, 0.12)" />
+  <text x="410" y="420" fill="#94a3b8" font-family="'Inter', 'Segoe UI', sans-serif" font-size="22" font-weight="400">✔ Import and deduplicate contact lists</text>
+  <text x="410" y="460" fill="#94a3b8" font-family="'Inter', 'Segoe UI', sans-serif" font-size="22" font-weight="400">✔ Prefill WhatsApp messages with reusable templates</text>
+  <text x="410" y="500" fill="#94a3b8" font-family="'Inter', 'Segoe UI', sans-serif" font-size="22" font-weight="400">✔ Track delivery attempts with real-time logs</text>
+</svg>

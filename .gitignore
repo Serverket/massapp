@@ -1,0 +1,36 @@
+# Dependencies and build outputs
+node_modules/
+dist/
+.vite/
+
+# Package manager locks (regenerated per workflow)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+bun.lock
+bun.lockb
+
+# Logs
+*.log
+logs/
+nohup.out
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# OS metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor settings
+.vscode/
+.idea/
+*.swp
+*.swo
