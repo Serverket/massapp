@@ -7,6 +7,13 @@ const STATUS_FILTERS = [
   { value: 'red', label: 'contacts.filters.red' },
 ]
 
+function extractDigits(value) {
+  if (!value) {
+    return ''
+  }
+  return value.toString().replace(/\D/g, '')
+}
+
 function useDebouncedValue(value, delayMs) {
   const [debounced, setDebounced] = useState(value)
 
@@ -70,12 +77,19 @@ async function fetchContacts({ statusFilter, search, showAll }) {
   return { data: allRows, error: null, total }
 }
 
-export function ContactsModal({ t, open, onClose, refreshToken, totalContacts }) {
+export function ContactsModal({ t, open, onClose, refreshToken, totalContacts, onSelectContact, selectedPhones = [] }) {
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [showAll, setShowAll] = useState(false)
   const [state, setState] = useState({ data: [], loading: false, error: null, total: null })
   const debouncedSearch = useDebouncedValue(search, 300)
+  const selectedSet = useMemo(() => {
+    return new Set(
+      (selectedPhones ?? [])
+        .map((value) => extractDigits(value))
+        .filter(Boolean),
+    )
+  }, [selectedPhones])
 
   useEffect(() => {
     if (!open) {
@@ -135,6 +149,8 @@ export function ContactsModal({ t, open, onClose, refreshToken, totalContacts })
   if (!open) {
     return null
   }
+
+  const interactive = typeof onSelectContact === 'function'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 px-4 py-8" role="dialog" aria-modal="true">
@@ -212,23 +228,52 @@ export function ContactsModal({ t, open, onClose, refreshToken, totalContacts })
               </thead>
               <tbody className="divide-y divide-slate-800/50">
                 {state.data.map((contact) => (
-                  <tr key={contact.id} className="bg-slate-900/60">
-                    <td className="px-4 py-2 font-semibold text-slate-100">{contact.full_name}</td>
-                    <td className="px-4 py-2 text-slate-300">{contact.company || '—'}</td>
-                    <td className="px-4 py-2 text-slate-300">{contact.email || '—'}</td>
-                    <td className="px-4 py-2 text-slate-300">{contact.phone || '—'}</td>
-                    <td className="px-4 py-2 text-slate-300">
-                      <span className="inline-flex items-center gap-2">
-                        <span className={`h-2.5 w-2.5 rounded-full ${contact.status === 'green' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-                        <span className="text-xs uppercase tracking-wide text-slate-300">
-                          {contact.status === 'green' ? t('contacts.statusLabels.green') : t('contacts.statusLabels.red')}
-                        </span>
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-right text-slate-300">
-                      {contact.last_sent_at ? new Date(contact.last_sent_at).toLocaleString() : '—'}
-                    </td>
-                  </tr>
+                  (() => {
+                    const phoneDigits = extractDigits(contact.phone)
+                    const isSelected = phoneDigits && selectedSet.has(phoneDigits)
+                    const rowClass = isSelected
+                      ? 'bg-blue-500/10 ring-1 ring-inset ring-blue-400/50'
+                      : 'bg-slate-900/60 hover:bg-slate-800/60'
+                    return (
+                      <tr
+                        key={contact.id}
+                        className={`transition-colors ${rowClass} ${interactive ? 'cursor-pointer' : ''}`}
+                        onClick={() => {
+                          if (interactive) {
+                            onSelectContact(contact)
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if (!interactive) {
+                            return
+                          }
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            onSelectContact(contact)
+                          }
+                        }}
+                        role={interactive ? 'button' : undefined}
+                        tabIndex={interactive ? 0 : undefined}
+                        aria-pressed={interactive ? isSelected : undefined}
+                      >
+                        <td className="px-4 py-2 font-semibold text-slate-100">{contact.full_name}</td>
+                        <td className="px-4 py-2 text-slate-300">{contact.company || '—'}</td>
+                        <td className="px-4 py-2 text-slate-300">{contact.email || '—'}</td>
+                        <td className="px-4 py-2 text-slate-300">{contact.phone || '—'}</td>
+                        <td className="px-4 py-2 text-slate-300">
+                          <span className="inline-flex items-center gap-2">
+                            <span className={`h-2.5 w-2.5 rounded-full ${contact.status === 'green' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                            <span className="text-xs uppercase tracking-wide text-slate-300">
+                              {contact.status === 'green' ? t('contacts.statusLabels.green') : t('contacts.statusLabels.red')}
+                            </span>
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-right text-slate-300">
+                          {contact.last_sent_at ? new Date(contact.last_sent_at).toLocaleString() : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })()
                 ))}
               </tbody>
             </table>

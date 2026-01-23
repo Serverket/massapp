@@ -128,6 +128,25 @@ function formatPhone(phone) {
   return `+${phone}`
 }
 
+function normalizePhoneDigits(value) {
+  if (!value) {
+    return null
+  }
+  const digits = value.toString().replace(/\D/g, '')
+  return digits.length >= 6 ? digits : null
+}
+
+function truncateLogMessage(message, limit = 160) {
+  if (!message) {
+    return ''
+  }
+  const normalized = message.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= limit) {
+    return normalized
+  }
+  return `${normalized.slice(0, Math.max(0, limit - 1))}…`
+}
+
 function buildWhatsAppUrl(phone, message, mode) {
   const config = LINK_MODES[mode] ?? LINK_MODES.web
   const params = new URLSearchParams()
@@ -211,6 +230,23 @@ function App() {
   useEffect(() => {
     loadTemplates()
   }, [loadTemplates])
+
+  useEffect(() => {
+    if (!session || !isSupabaseReady()) {
+      return undefined
+    }
+
+    const channel = supabase
+      .channel('templates-live-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'templates' }, () => {
+        loadTemplates()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [loadTemplates, session])
 
   const refreshContactMetrics = useCallback(async () => {
     if (!isSupabaseReady()) {
@@ -394,7 +430,6 @@ function App() {
   const openTabLabel = t('preview.openTab')
   const copyLinkLabel = t('preview.copyLink')
   const logTitle = t('log.title')
-  const firstLinkLabel = primaryPreview ? t('log.firstLink', { url: primaryPreview }) : null
 
   const languageTarget = locale === 'en' ? 'es' : 'en'
   const languageButtonLabel = languageTarget === 'es' ? t('actions.switchToSpanish') : t('actions.switchToEnglish')
@@ -557,6 +592,32 @@ function App() {
     setLastLaunchReport(null)
   }, [])
 
+  const handleAddContact = useCallback(
+    (contact) => {
+      if (!contact) {
+        return
+      }
+      const digits = normalizePhoneDigits(contact.phone)
+      const contactLabel = contact.full_name?.trim() || t('contacts.select.unnamed')
+      if (!digits) {
+        appendStatus('warning', t('contacts.select.missingPhone', { name: contactLabel }))
+        return
+      }
+      const selectedSet = new Set(preparedRecipients)
+      if (selectedSet.has(digits)) {
+        appendStatus('info', t('contacts.select.alreadyAdded', { phone: formatPhone(digits), name: contactLabel }))
+        return
+      }
+      selectedSet.add(digits)
+      const nextInput = Array.from(selectedSet)
+        .map((value) => formatPhone(value))
+        .join('\n')
+      setRecipientInput(nextInput)
+      appendStatus('success', t('contacts.select.added', { phone: formatPhone(digits), name: contactLabel }))
+    },
+    [appendStatus, preparedRecipients, t],
+  )
+
   if (!isSupabaseReady()) {
     return (
       <div className="flex items-center justify-center min-h-screen px-6 py-10 bg-slate-950 text-slate-100">
@@ -631,9 +692,9 @@ function App() {
         </div>
       </header>
 
-      <main className="mt-8 grid gap-8 lg:grid-cols-[1.05fr_0.95fr] xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="flex flex-col gap-8">
-          <article className={`${CARD_BASE} gap-6`}>
+      <main className="mt-8 flex flex-col gap-8">
+        <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-4 xl:items-stretch">
+          <article className={`${CARD_BASE} gap-6 xl:col-span-2 xl:self-start`}>
             <div className="flex flex-col gap-1.5">
               <h2 className="text-xl font-semibold text-slate-100">{launcherTitle}</h2>
               <p className="text-sm text-slate-400">{launcherDescription}</p>
@@ -791,73 +852,85 @@ function App() {
             ) : null}
           </article>
 
-          <article className={`${CARD_BASE} gap-5`}>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
-              <h2 className="text-lg font-semibold text-slate-100">{logTitle}</h2>
-              {firstLinkLabel ? <span className="text-xs text-slate-400">{firstLinkLabel}</span> : null}
-            </div>
-            <ul className="flex flex-col gap-2 p-0 overflow-y-auto list-none max-h-72 md:max-h-80">
-              {statusLog.map((entry) => (
-                <li
-                  key={entry.id}
-                  className={`grid grid-cols-[auto_1fr] items-center gap-3 rounded-xl border border-slate-700/40 bg-slate-900/60 px-3 py-2 text-sm shadow-sm border-l-4 ${LOG_LEVEL_STYLES[entry.level] || LOG_LEVEL_STYLES.info}`}
-                >
-                  <span className="font-mono text-xs text-slate-400">{formatTime(entry.timestamp)}</span>
-                  <span className="text-sm text-slate-100">{entry.message}</span>
-                </li>
-              ))}
-            </ul>
-          </article>
-        </div>
-
-        <div className="flex flex-col gap-8">
-          <article className={`${CARD_BASE} gap-6`}>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-100">{previewTitle}</h2>
-                <p className="max-w-sm mt-2 text-sm text-slate-400">{modeDetails.helper}</p>
-              </div>
-              <span className="text-xs font-semibold tracking-wide uppercase text-slate-400">{previewSummary}</span>
-            </div>
-
-            <div className="p-4 border border-dashed rounded-2xl border-slate-600/50 bg-slate-900/60">
-              <span className="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-slate-500">{messagePreviewLabel}</span>
-              <p className="mt-2 text-sm whitespace-pre-wrap text-slate-100">{messagePreview}</p>
-            </div>
-
-            {previewLinks.length === 0 ? (
-              <p className="text-sm text-slate-400">{emptyStateText}</p>
-            ) : (
-              <ul className="grid gap-4 p-0 list-none sm:grid-cols-2">
-                {previewLinks.map(({ phone, url }) => (
-                  <li key={phone} className="flex flex-col gap-3 p-4 border rounded-xl border-slate-700/40 bg-slate-900/60">
-                    <div className="flex flex-col gap-1">
-                      <span className="text-base font-semibold text-slate-100">{formatPhone(phone)}</span>
-                      <p className="text-xs break-all text-slate-400">{url}</p>
-                    </div>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <a className={BUTTON_GHOST} href={url} target="_blank" rel="noopener noreferrer">
-                        {openTabLabel}
-                      </a>
-                      <button type="button" className={BUTTON_SECONDARY} onClick={() => handleCopyLink(url)}>
-                        {copyLinkLabel}
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {previewMoreLabel ? <p className="text-xs text-slate-500">{previewMoreLabel}</p> : null}
-          </article>
-          <ContactsImport t={t} onImportComplete={handleContactsImported} />
           <ContactsPanel
             t={t}
             totalContacts={contactTotal}
             refreshToken={contactsRefreshToken}
             onOpenModal={handleOpenContactsModal}
+            onSelectContact={handleAddContact}
+            selectedPhones={preparedRecipients}
+            className="xl:col-span-2 xl:self-stretch"
           />
         </div>
+
+        <article className={`${CARD_BASE} gap-6`}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-100">{previewTitle}</h2>
+              <p className="max-w-sm mt-2 text-sm text-slate-400">{modeDetails.helper}</p>
+            </div>
+            <span className="text-xs font-semibold tracking-wide uppercase text-slate-400">{previewSummary}</span>
+          </div>
+
+          <div className="p-4 border border-dashed rounded-2xl border-slate-600/50 bg-slate-900/60">
+            <span className="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-slate-500">{messagePreviewLabel}</span>
+            <p className="mt-2 text-sm whitespace-pre-wrap text-slate-100">{messagePreview}</p>
+          </div>
+
+          {previewLinks.length === 0 ? (
+            <p className="text-sm text-slate-400">{emptyStateText}</p>
+          ) : (
+            <ul className="grid gap-4 p-0 list-none sm:grid-cols-2">
+              {previewLinks.map(({ phone, url }) => (
+                <li key={phone} className="flex flex-col gap-3 p-4 border rounded-xl border-slate-700/40 bg-slate-900/60">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-base font-semibold text-slate-100">{formatPhone(phone)}</span>
+                    <p className="text-xs break-all text-slate-400">{url}</p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <a className={BUTTON_GHOST} href={url} target="_blank" rel="noopener noreferrer">
+                      {openTabLabel}
+                    </a>
+                    <button type="button" className={BUTTON_SECONDARY} onClick={() => handleCopyLink(url)}>
+                      {copyLinkLabel}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {previewMoreLabel ? <p className="text-xs text-slate-500">{previewMoreLabel}</p> : null}
+        </article>
+
+        <ContactsImport t={t} onImportComplete={handleContactsImported} />
+
+        <article className={`${CARD_BASE} gap-5`}>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
+            <h2 className="text-lg font-semibold text-slate-100">{logTitle}</h2>
+          </div>
+          <ul className="flex flex-col gap-2 p-0 overflow-y-auto list-none max-h-72 md:max-h-80">
+            {statusLog.map((entry) => (
+              <li
+                key={entry.id}
+                className={`grid grid-cols-[auto_1fr] items-start gap-3 rounded-xl border border-slate-700/40 bg-slate-900/60 px-3 py-2 text-sm shadow-sm border-l-4 ${LOG_LEVEL_STYLES[entry.level] || LOG_LEVEL_STYLES.info}`}
+              >
+                <span className="font-mono text-xs text-slate-400">{formatTime(entry.timestamp)}</span>
+                {(() => {
+                  const fullMessage = (entry.message ?? '').replace(/\s+/g, ' ').trim()
+                  const displayMessage = truncateLogMessage(fullMessage)
+                  return (
+                    <span className="min-w-0 text-sm text-slate-100">
+                      <span className="block overflow-hidden text-ellipsis whitespace-nowrap" title={fullMessage}>
+                        {displayMessage}
+                      </span>
+                    </span>
+                  )
+                })()}
+              </li>
+            ))}
+          </ul>
+        </article>
       </main>
       <ContactsModal
         t={t}
@@ -865,6 +938,8 @@ function App() {
         onClose={handleCloseContactsModal}
         refreshToken={contactsRefreshToken}
         totalContacts={contactTotal}
+        onSelectContact={handleAddContact}
+        selectedPhones={preparedRecipients}
       />
       <TemplateManagerModal
         t={t}

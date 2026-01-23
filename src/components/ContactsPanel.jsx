@@ -7,6 +7,13 @@ const STATUS_FILTERS = [
   { value: 'red', label: 'contacts.filters.red' },
 ]
 
+function extractDigits(value) {
+  if (!value) {
+    return ''
+  }
+  return value.toString().replace(/\D/g, '')
+}
+
 function useDebouncedValue(value, delayMs) {
   const [debounced, setDebounced] = useState(value)
 
@@ -18,13 +25,28 @@ function useDebouncedValue(value, delayMs) {
   return debounced
 }
 
-export function ContactsPanel({ t, totalContacts, refreshToken, onOpenModal }) {
+export function ContactsPanel({
+  t,
+  totalContacts,
+  refreshToken,
+  onOpenModal,
+  onSelectContact,
+  selectedPhones = [],
+  className = '',
+}) {
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [state, setState] = useState({ data: [], loading: true, error: null })
   const debouncedSearch = useDebouncedValue(search, 300)
 
   const isDisabled = !isSupabaseReady()
+  const selectedSet = useMemo(() => {
+    return new Set(
+      (selectedPhones ?? [])
+        .map((value) => extractDigits(value))
+        .filter(Boolean),
+    )
+  }, [selectedPhones])
 
   useEffect(() => {
     if (isDisabled) {
@@ -95,14 +117,14 @@ export function ContactsPanel({ t, totalContacts, refreshToken, onOpenModal }) {
   }, [data.length, error, loading, t, totalContacts])
 
   return (
-    <article className="flex flex-col gap-5 rounded-2xl border border-slate-700/40 bg-slate-900/70 p-6 shadow-lg shadow-slate-950/50">
+    <article className={`flex h-full min-h-0 flex-col gap-5 overflow-hidden rounded-2xl border border-slate-700/40 bg-slate-900/70 p-6 shadow-lg shadow-slate-950/50 ${className}`}>
       <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-1.5">
           <h2 className="text-lg font-semibold text-slate-100">{t('contacts.title')}</h2>
           <p className="text-sm text-slate-400">{t('contacts.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">{statusSummary}</span>
+          <span className="text-xs font-semibold tracking-wide uppercase text-slate-400">{statusSummary}</span>
           <button
             type="button"
             onClick={onOpenModal}
@@ -115,10 +137,10 @@ export function ContactsPanel({ t, totalContacts, refreshToken, onOpenModal }) {
       </header>
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        <div className="flex w-full items-center gap-2 rounded-xl border border-slate-700/60 bg-slate-900/60 px-3">
+        <div className="flex items-center w-full gap-2 px-3 border rounded-xl border-slate-700/60 bg-slate-900/60">
           <svg
             aria-hidden="true"
-            className="h-4 w-4 text-slate-500"
+            className="w-4 h-4 text-slate-500"
             viewBox="0 0 20 20"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
@@ -133,10 +155,10 @@ export function ContactsPanel({ t, totalContacts, refreshToken, onOpenModal }) {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder={t('contacts.searchPlaceholder')}
-            className="w-full bg-transparent py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none"
+            className="w-full py-2 text-sm bg-transparent text-slate-100 placeholder:text-slate-500 focus:outline-none"
           />
         </div>
-        <div className="flex flex-nowrap gap-2">
+        <div className="flex gap-2 flex-nowrap">
           {STATUS_FILTERS.map((filter) => (
             <button
               key={filter.value}
@@ -154,15 +176,15 @@ export function ContactsPanel({ t, totalContacts, refreshToken, onOpenModal }) {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-700/40">
-        <div className="grid grid-cols-[1.15fr_1fr_1fr_0.9fr_0.6fr] bg-slate-800/60 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-300">
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden border rounded-xl border-slate-700/40">
+        <div className="hidden bg-slate-800/60 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-300 md:grid md:grid-cols-[1.15fr_1fr_1fr_0.9fr_0.6fr]">
           <span>{t('contacts.columns.name')}</span>
           <span>{t('contacts.columns.company')}</span>
           <span>{t('contacts.columns.email')}</span>
           <span>{t('contacts.columns.phone')}</span>
           <span>{t('contacts.columns.status')}</span>
         </div>
-        <div className="max-h-80 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto pt-3 pb-2 max-h-[28rem] md:max-h-[32rem] md:py-0">
           {state.loading ? (
             <div className="px-4 py-6 text-sm text-slate-400">{t('contacts.loading')}</div>
           ) : state.error ? (
@@ -172,23 +194,60 @@ export function ContactsPanel({ t, totalContacts, refreshToken, onOpenModal }) {
           ) : (
             <ul className="divide-y divide-slate-800/60">
               {state.data.map((contact) => (
-                <li key={contact.id} className="grid grid-cols-[1.15fr_1fr_1fr_0.9fr_0.6fr] items-center gap-3 px-4 py-3 text-sm text-slate-200">
-                  <span className="truncate" title={contact.full_name}>{contact.full_name}</span>
-                  <span className="truncate" title={contact.company || ''}>{contact.company || '—'}</span>
-                  <span className="truncate" title={contact.email || ''}>{contact.email || '—'}</span>
-                  <span className="truncate" title={contact.phone || ''}>{contact.phone || '—'}</span>
-                  <span className="flex items-center gap-2">
-                    <span
-                      className={`h-2.5 w-2.5 rounded-full ${
-                        contact.status === 'green' ? 'bg-emerald-400' : 'bg-rose-400'
-                      }`}
-                    />
-                    <span className="text-xs uppercase tracking-wide text-slate-300">
-                      {contact.status === 'green'
-                        ? t('contacts.statusLabels.green')
-                        : t('contacts.statusLabels.red')}
-                    </span>
-                  </span>
+                <li key={contact.id} className="px-1 py-1">
+                  {(() => {
+                    const phoneDigits = extractDigits(contact.phone)
+                    const isSelected = phoneDigits && selectedSet.has(phoneDigits)
+                    const interactive = typeof onSelectContact === 'function'
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (interactive) {
+                            onSelectContact(contact)
+                          }
+                        }}
+                        className={`grid w-full gap-3 rounded-lg border px-4 py-3 text-left text-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 md:grid-cols-[1.15fr_1fr_1fr_0.9fr_0.6fr] ${
+                          interactive ? 'cursor-pointer' : 'cursor-default'
+                        } ${
+                          isSelected
+                            ? 'border-blue-400/60 bg-blue-500/10 text-slate-100'
+                            : 'border-transparent bg-slate-900/60 text-slate-200 hover:border-slate-600/70 hover:bg-slate-800/60'
+                        }`}
+                        aria-pressed={interactive ? isSelected : undefined}
+                      >
+                        <span className="min-w-0 truncate" title={contact.full_name}>
+                          <span className="block text-xs font-semibold uppercase text-slate-400 md:hidden">{t('contacts.columns.name')}</span>
+                          {contact.full_name}
+                        </span>
+                        <span className="min-w-0 truncate" title={contact.company || ''}>
+                          <span className="block text-xs font-semibold uppercase text-slate-400 md:hidden">{t('contacts.columns.company')}</span>
+                          {contact.company || '—'}
+                        </span>
+                        <span className="min-w-0 truncate" title={contact.email || ''}>
+                          <span className="block text-xs font-semibold uppercase text-slate-400 md:hidden">{t('contacts.columns.email')}</span>
+                          {contact.email || '—'}
+                        </span>
+                        <span className="min-w-0 truncate" title={contact.phone || ''}>
+                          <span className="block text-xs font-semibold uppercase text-slate-400 md:hidden">{t('contacts.columns.phone')}</span>
+                          {contact.phone || '—'}
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <span className="block text-xs font-semibold uppercase text-slate-400 md:hidden">{t('contacts.columns.status')}</span>
+                          <span
+                            className={`h-2.5 w-2.5 rounded-full ${
+                              contact.status === 'green' ? 'bg-emerald-400' : 'bg-rose-400'
+                            }`}
+                          />
+                          <span className="text-xs tracking-wide uppercase text-slate-300">
+                            {contact.status === 'green'
+                              ? t('contacts.statusLabels.green')
+                              : t('contacts.statusLabels.red')}
+                          </span>
+                        </span>
+                      </button>
+                    )
+                  })()}
                 </li>
               ))}
             </ul>

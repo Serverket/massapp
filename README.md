@@ -1,4 +1,4 @@
-# MassApp
+# MassApp - WhatsApp campaign launcher
 
 ![MassApp cover](public/readme-cover.svg)
 
