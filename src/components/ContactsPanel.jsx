@@ -1,5 +1,6 @@
-import { startTransition, useEffect, useMemo, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isSupabaseReady, supabase } from '../lib/supabaseClient.js'
+import { toggleContactDeliveryStatus } from '../lib/storage.js'
 
 const STATUS_FILTERS = [
   { value: 'all', label: 'contacts.filters.all' },
@@ -37,7 +38,10 @@ export function ContactsPanel({
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [state, setState] = useState({ data: [], loading: true, error: null })
+  const [localRefreshVersion, setLocalRefreshVersion] = useState(0)
   const debouncedSearch = useDebouncedValue(search, 300)
+  const clickTimeoutRef = useRef(null)
+  const togglingIdsRef = useRef(new Set())
 
   const isDisabled = !isSupabaseReady()
   const selectedSet = useMemo(() => {
@@ -47,6 +51,15 @@ export function ContactsPanel({
         .filter(Boolean),
     )
   }, [selectedPhones])
+
+  useEffect(() => {
+    return () => {
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current)
+        clickTimeoutRef.current = null
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (isDisabled) {
@@ -96,7 +109,88 @@ export function ContactsPanel({
     return () => {
       isCancelled = true
     }
-  }, [debouncedSearch, statusFilter, isDisabled, refreshToken, t])
+  }, [debouncedSearch, statusFilter, isDisabled, refreshToken, t, localRefreshVersion])
+  const scheduleContactSelection = useCallback(
+    (contact) => {
+      if (typeof onSelectContact !== 'function') {
+        return
+      }
+
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current)
+      }
+
+      clickTimeoutRef.current = setTimeout(() => {
+        clickTimeoutRef.current = null
+        onSelectContact(contact)
+      }, 220)
+    },
+    [onSelectContact],
+  )
+
+  const handleToggleStatus = useCallback(
+    async (contact) => {
+      if (isDisabled || !contact?.id) {
+        return
+      }
+
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current)
+        clickTimeoutRef.current = null
+      }
+
+      if (togglingIdsRef.current.has(contact.id)) {
+        return
+      }
+
+      const previousStatus = contact.status
+      const previousLastSentAt = contact.last_sent_at ?? null
+
+      togglingIdsRef.current.add(contact.id)
+
+      const optimisticStatus = previousStatus === 'green' ? 'red' : 'green'
+      const optimisticLastSentAt = optimisticStatus === 'green' ? new Date().toISOString() : null
+
+      setState((prev) => ({
+        ...prev,
+        data: prev.data.map((item) =>
+          item.id === contact.id
+            ? { ...item, status: optimisticStatus, last_sent_at: optimisticLastSentAt }
+            : item,
+        ),
+      }))
+
+      const { data: updatedContact, error } = await toggleContactDeliveryStatus({
+        contactId: contact.id,
+        currentStatus: previousStatus,
+      })
+
+      togglingIdsRef.current.delete(contact.id)
+
+      if (error || !updatedContact) {
+        setState((prev) => ({
+          ...prev,
+          data: prev.data.map((item) =>
+            item.id === contact.id
+              ? { ...item, status: previousStatus, last_sent_at: previousLastSentAt }
+              : item,
+          ),
+        }))
+        console.error('Failed to toggle contact status', error)
+        return
+      }
+
+      setState((prev) => ({
+        ...prev,
+        data: prev.data.map((item) => (item.id === contact.id ? { ...item, ...updatedContact } : item)),
+      }))
+
+      if (statusFilter !== 'all') {
+        setLocalRefreshVersion((value) => value + 1)
+      }
+    },
+    [isDisabled, statusFilter],
+  )
 
   const { data, loading, error } = state
 
@@ -212,9 +306,10 @@ export function ContactsPanel({
                         type="button"
                         onClick={() => {
                           if (interactive) {
-                            onSelectContact(contact)
+                            scheduleContactSelection(contact)
                           }
                         }}
+                        onDoubleClick={() => handleToggleStatus(contact)}
                         className={`grid w-full gap-3 rounded-lg border px-4 py-3 text-left text-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 md:grid-cols-[1.15fr_1fr_1fr_0.9fr_0.6fr] ${
                           interactive ? 'cursor-pointer' : 'cursor-default'
                         } ${

@@ -72,3 +72,25 @@ export async function removeTemplate(id) {
   const { error } = await supabase.from('message_templates').delete().eq('id', id)
   return { error }
 }
+
+export async function toggleContactDeliveryStatus({ contactId, currentStatus }) {
+  if (!isSupabaseReady()) {
+    return { error: new Error('Supabase client is not configured') }
+  }
+
+  if (!contactId) {
+    return { error: new Error('Contact id is required') }
+  }
+
+  const markAsSent = currentStatus !== 'green'
+  const nextLastSentAt = markAsSent ? new Date().toISOString() : null
+
+  const { data, error } = await supabase
+    .from('contacts')
+    .update({ last_sent_at: nextLastSentAt })
+    .eq('id', contactId)
+    .select('id, status, last_sent_at')
+    .single()
+
+  return { data, error }
+}

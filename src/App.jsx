@@ -1127,6 +1127,9 @@ function App() {
         totalContacts={contactTotal}
         onSelectContact={handleAddContact}
         selectedPhones={preparedRecipients}
+        onSyncContacts={() => {
+          setContactsRefreshToken((token) => token + 1)
+        }}
       />
       <TemplateManagerModal
         t={t}

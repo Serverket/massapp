@@ -1,5 +1,6 @@
-import { startTransition, useEffect, useMemo, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase, isSupabaseReady } from '../lib/supabaseClient.js'
+import { toggleContactDeliveryStatus } from '../lib/storage.js'
 
 const STATUS_FILTERS = [
   { value: 'all', label: 'contacts.filters.all' },
@@ -77,12 +78,17 @@ async function fetchContacts({ statusFilter, search, showAll }) {
   return { data: allRows, error: null, total }
 }
 
-export function ContactsModal({ t, open, onClose, refreshToken, totalContacts, onSelectContact, selectedPhones = [] }) {
+export function ContactsModal({ t, open, onClose, refreshToken, totalContacts, onSelectContact, selectedPhones = [], onSyncContacts }) {
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [showAll, setShowAll] = useState(false)
   const [state, setState] = useState({ data: [], loading: false, error: null, total: null })
+  const [localRefreshVersion, setLocalRefreshVersion] = useState(0)
   const debouncedSearch = useDebouncedValue(search, 300)
+  const clickTimeoutRef = useRef(null)
+  const togglingIdsRef = useRef(new Set())
+  const hasPendingSyncRef = useRef(false)
+  const wasOpenRef = useRef(open)
   const selectedSet = useMemo(() => {
     return new Set(
       (selectedPhones ?? [])
@@ -90,6 +96,15 @@ export function ContactsModal({ t, open, onClose, refreshToken, totalContacts, o
         .filter(Boolean),
     )
   }, [selectedPhones])
+
+  useEffect(() => {
+    return () => {
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current)
+        clickTimeoutRef.current = null
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (!open) {
@@ -128,7 +143,7 @@ export function ContactsModal({ t, open, onClose, refreshToken, totalContacts, o
     return () => {
       isCancelled = true
     }
-  }, [debouncedSearch, open, refreshToken, showAll, statusFilter, t])
+  }, [debouncedSearch, open, refreshToken, showAll, statusFilter, t, localRefreshVersion])
 
   useEffect(() => {
     if (!open) {
@@ -156,11 +171,105 @@ export function ContactsModal({ t, open, onClose, refreshToken, totalContacts, o
     return t('contacts.modal.summary', { count: visibleCount, total: effectiveTotal })
   }, [effectiveTotal, state.error, state.loading, t, visibleCount])
 
+  const interactive = typeof onSelectContact === 'function'
+  const scheduleContactSelection = useCallback(
+    (contact) => {
+      if (!interactive) {
+        return
+      }
+
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current)
+      }
+
+      clickTimeoutRef.current = setTimeout(() => {
+        clickTimeoutRef.current = null
+        onSelectContact(contact)
+      }, 220)
+    },
+    [interactive, onSelectContact],
+  )
+
+  const handleToggleStatus = useCallback(
+    async (contact) => {
+      if (!contact?.id || !isSupabaseReady()) {
+        return
+      }
+
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current)
+        clickTimeoutRef.current = null
+      }
+
+      if (togglingIdsRef.current.has(contact.id)) {
+        return
+      }
+
+      const previousStatus = contact.status
+      const previousLastSentAt = contact.last_sent_at ?? null
+
+      togglingIdsRef.current.add(contact.id)
+
+      const optimisticStatus = previousStatus === 'green' ? 'red' : 'green'
+      const optimisticLastSentAt = optimisticStatus === 'green' ? new Date().toISOString() : null
+
+      setState((prev) => ({
+        ...prev,
+        data: prev.data.map((item) =>
+          item.id === contact.id
+            ? { ...item, status: optimisticStatus, last_sent_at: optimisticLastSentAt }
+            : item,
+        ),
+      }))
+
+      const { data: updatedContact, error } = await toggleContactDeliveryStatus({
+        contactId: contact.id,
+        currentStatus: previousStatus,
+      })
+
+      togglingIdsRef.current.delete(contact.id)
+
+      if (error || !updatedContact) {
+        setState((prev) => ({
+          ...prev,
+          data: prev.data.map((item) =>
+            item.id === contact.id
+              ? { ...item, status: previousStatus, last_sent_at: previousLastSentAt }
+              : item,
+          ),
+        }))
+        console.error('Failed to toggle contact status', error)
+        return
+      }
+
+      setState((prev) => ({
+        ...prev,
+        data: prev.data.map((item) => (item.id === contact.id ? { ...item, ...updatedContact } : item)),
+      }))
+
+      if (statusFilter !== 'all') {
+        setLocalRefreshVersion((value) => value + 1)
+      }
+
+      hasPendingSyncRef.current = true
+    },
+    [statusFilter],
+  )
+  useEffect(() => {
+    const wasOpen = wasOpenRef.current
+    wasOpenRef.current = open
+
+    if (wasOpen && !open && hasPendingSyncRef.current) {
+      hasPendingSyncRef.current = false
+      if (typeof onSyncContacts === 'function') {
+        onSyncContacts()
+      }
+    }
+  }, [onSyncContacts, open])
+
   if (!open) {
     return null
   }
-
-  const interactive = typeof onSelectContact === 'function'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 px-4 py-8" role="dialog" aria-modal="true">
@@ -249,10 +358,9 @@ export function ContactsModal({ t, open, onClose, refreshToken, totalContacts, o
                         key={contact.id}
                         className={`transition-colors ${rowClass} ${interactive ? 'cursor-pointer' : ''}`}
                         onClick={() => {
-                          if (interactive) {
-                            onSelectContact(contact)
-                          }
+                          scheduleContactSelection(contact)
                         }}
+                        onDoubleClick={() => handleToggleStatus(contact)}
                         onKeyDown={(event) => {
                           if (!interactive) {
                             return
