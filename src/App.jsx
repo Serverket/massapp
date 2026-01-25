@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useTranslation } from './i18n/TranslationProvider.jsx'
-import { fetchTemplates, recordSendMetrics } from './lib/storage.js'
+import { useTranslation } from './i18n/useTranslation.js'
+import { fetchTemplates, recordContactSends, recordSendMetrics } from './lib/storage.js'
 import { isSupabaseReady, supabase } from './lib/supabaseClient.js'
 import { useSupabaseHealth } from './lib/useSupabaseHealth.js'
 import { useSupabaseAuth } from './lib/useSupabaseAuth.js'
@@ -23,7 +23,7 @@ const BUTTON_GHOST =
   'inline-flex h-10 w-full items-center justify-center rounded-xl border border-slate-600/60 bg-slate-900/60 px-4 text-sm font-semibold text-slate-200 transition hover:border-slate-400/60 hover:bg-slate-800/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400'
 
 const BUTTON_SECONDARY =
-  'inline-flex h-10 w-full items-center justify-center rounded-xl border border-blue-400/40 bg-blue-500/10 px-4 text-sm font-semibold text-blue-200 transition hover:border-blue-300/70 hover:bg-blue-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400'
+  'inline-flex h-10 w-full items-center justify-center rounded-xl border border-blue-400/40 bg-blue-500/10 px-4 text-sm font-semibold text-blue-200 transition hover:border-blue-300/70 hover:bg-blue-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400 sm:w-auto'
 
 const BUTTON_DANGER =
   'inline-flex h-9 items-center justify-center rounded-lg border border-rose-500/60 px-3 text-xs font-semibold uppercase tracking-wide text-rose-200 transition hover:border-rose-400/70 hover:bg-rose-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60'
@@ -73,14 +73,53 @@ const SUPABASE_INDICATOR_STYLES = {
     dot: 'bg-sky-400',
     ping: 'bg-sky-400',
   },
-  error: {
-    dot: 'bg-rose-500',
-    ping: 'bg-rose-500',
-  },
   offline: {
     dot: 'bg-slate-500',
     ping: 'bg-slate-600',
   },
+}
+
+const TEMPLATE_CACHE_KEY = 'massapp:templates-cache'
+const TEMPLATE_CACHE_MAX_AGE_MS = 5 * 60 * 1000
+
+function readTemplateCache() {
+  if (typeof window === 'undefined' || !window?.localStorage) {
+    return null
+  }
+  try {
+    const raw = window.localStorage.getItem(TEMPLATE_CACHE_KEY)
+    if (!raw) {
+      return null
+    }
+    const payload = JSON.parse(raw)
+    if (!Array.isArray(payload.items) || typeof payload.timestamp !== 'number') {
+      return null
+    }
+    const age = Date.now() - payload.timestamp
+    return {
+      items: payload.items,
+      timestamp: payload.timestamp,
+      fresh: age <= TEMPLATE_CACHE_MAX_AGE_MS,
+    }
+  } catch (error) {
+    console.warn('Failed to read template cache', error)
+    return null
+  }
+}
+
+function writeTemplateCache(items) {
+  if (typeof window === 'undefined' || !window?.localStorage) {
+    return
+  }
+  try {
+    const payload = {
+      items,
+      timestamp: Date.now(),
+    }
+    window.localStorage.setItem(TEMPLATE_CACHE_KEY, JSON.stringify(payload))
+  } catch (error) {
+    console.warn('Failed to write template cache', error)
+  }
 }
 
 function formatTime(iso) {
@@ -90,7 +129,7 @@ function formatTime(iso) {
       minute: '2-digit',
       second: '2-digit',
     }).format(new Date(iso))
-  } catch (err) {
+  } catch {
     return iso
   }
 }
@@ -136,7 +175,7 @@ function normalizePhoneDigits(value) {
   return digits.length >= 6 ? digits : null
 }
 
-function truncateLogMessage(message, limit = 160) {
+function truncateLogMessage(message, limit = 96) {
   if (!message) {
     return ''
   }
@@ -171,6 +210,7 @@ function App() {
   const [templatesError, setTemplatesError] = useState(null)
   const [selectedTemplateId, setSelectedTemplateId] = useState(null)
   const [lastLaunchReport, setLastLaunchReport] = useState(null)
+  const [contactIdMap, setContactIdMap] = useState({})
   const { session, loading: authLoading } = useSupabaseAuth()
   const [signOutLoading, setSignOutLoading] = useState(false)
   const supabaseHealth = useSupabaseHealth()
@@ -204,23 +244,38 @@ function App() {
     })
   }, [])
 
-  const loadTemplates = useCallback(async () => {
+  const loadTemplates = useCallback(async ({ force = false } = {}) => {
     if (!isSupabaseReady()) {
       setTemplates([])
       setTemplatesError(new Error(t('templates.missingSupabase')))
       setTemplatesLoading(false)
       return
     }
+
+    const cached = readTemplateCache()
+    if (cached) {
+      setTemplates(cached.items)
+      setTemplatesError(null)
+      if (!force && cached.fresh) {
+        setTemplatesLoading(false)
+        return
+      }
+    }
+
     setTemplatesLoading(true)
     setTemplatesError(null)
     try {
       const { data, error } = await fetchTemplates()
       if (error) {
-        setTemplates([])
+        if (!cached) {
+          setTemplates([])
+        }
         setTemplatesError(error)
       } else {
-        setTemplates(data ?? [])
+        const resolved = data ?? []
+        setTemplates(resolved)
         setTemplatesError(null)
+        writeTemplateCache(resolved)
       }
     } finally {
       setTemplatesLoading(false)
@@ -228,8 +283,15 @@ function App() {
   }, [t])
 
   useEffect(() => {
+    if (!session || !isSupabaseReady()) {
+      setTemplates([])
+      setTemplatesError(null)
+      setSelectedTemplateId(null)
+      setTemplatesLoading(false)
+      return
+    }
     loadTemplates()
-  }, [loadTemplates])
+  }, [loadTemplates, session])
 
   useEffect(() => {
     if (!session || !isSupabaseReady()) {
@@ -239,7 +301,7 @@ function App() {
     const channel = supabase
       .channel('templates-live-sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'templates' }, () => {
-        loadTemplates()
+        loadTemplates({ force: true })
       })
       .subscribe()
 
@@ -300,9 +362,15 @@ function App() {
     setTemplateManagerOpen(false)
   }, [])
 
+  useEffect(() => {
+    if (templateManagerOpen && session && isSupabaseReady()) {
+      loadTemplates({ force: true })
+    }
+  }, [loadTemplates, session, templateManagerOpen])
+
   const handleTemplateSaved = useCallback(
     (template, { isUpdate } = {}) => {
-      loadTemplates()
+      loadTemplates({ force: true })
       const templateName = template?.name ?? t('templates.manage.unnamed')
       appendStatus('success', isUpdate ? t('templates.manage.updateLog', { name: templateName }) : t('templates.manage.createLog', { name: templateName }))
     },
@@ -311,7 +379,7 @@ function App() {
 
   const handleTemplateDeleted = useCallback(
     (_templateId, template) => {
-      loadTemplates()
+      loadTemplates({ force: true })
       const templateName = template?.name ?? t('templates.manage.unnamed')
       appendStatus('success', t('templates.manage.deleteLog', { name: templateName }))
     },
@@ -368,7 +436,6 @@ function App() {
 
   const previewLinks = useMemo(() => urlPayloads.slice(0, 10), [urlPayloads])
   const previewOverflow = Math.max(urlPayloads.length - previewLinks.length, 0)
-  const primaryPreview = urlPayloads[0]?.url || ''
   const messagePreview = trimmedMessage
     ? `${trimmedMessage.slice(0, 160)}${trimmedMessage.length > 160 ? '…' : ''}`
     : t('preview.emptyMessage')
@@ -492,7 +559,68 @@ function App() {
     return false
   }, [])
 
-  const handleLaunch = useCallback(async () => {
+  const resolveContactIds = useCallback(
+    async (phones) => {
+      if (!isSupabaseReady() || phones.length === 0) {
+        return new Map()
+      }
+
+      const resolved = new Map()
+      phones.forEach((digits) => {
+        const knownId = contactIdMap[digits]
+        if (knownId) {
+          resolved.set(digits, knownId)
+        }
+      })
+
+      const unresolved = phones.filter((digits) => !resolved.has(digits))
+      if (unresolved.length === 0) {
+        return resolved
+      }
+
+      const phoneCandidates = Array.from(
+        new Set(
+          unresolved.flatMap((digits) => [digits, `+${digits}`]),
+        ),
+      )
+
+      if (phoneCandidates.length === 0) {
+        return resolved
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('contacts')
+          .select('id, phone')
+          .in('phone', phoneCandidates)
+
+        if (error) {
+          throw error
+        }
+
+        const updates = {}
+        for (const row of data ?? []) {
+          const digits = normalizePhoneDigits(row.phone)
+          if (!digits) {
+            continue
+          }
+          resolved.set(digits, row.id)
+          updates[digits] = row.id
+        }
+
+        if (Object.keys(updates).length > 0) {
+          setContactIdMap((previous) => ({ ...previous, ...updates }))
+        }
+      } catch (error) {
+        console.error('Failed to resolve contact ids', error)
+      }
+
+      return resolved
+    },
+    [contactIdMap],
+  )
+
+  const runLaunch = useCallback(async () => {
     if (preparedRecipients.length === 0) {
       appendStatus('warning', t('status.needsRecipients'))
       return
@@ -518,11 +646,15 @@ function App() {
       return { phone, url, opened }
     })
 
-    setLastLaunchReport({
+      const launchReport = {
       attempts,
       mode: linkMode,
+      message: trimmedMessage,
+      templateId: selectedTemplateId,
       timestamp: new Date().toISOString(),
-    })
+    }
+
+    setLastLaunchReport(launchReport)
 
     if (openedCount === 0) {
       appendStatus('error', t('status.popupsNone', { summary }))
@@ -532,7 +664,7 @@ function App() {
       appendStatus('warning', t('status.popupsSome', { summary }))
     }
 
-    const { error: metricsError } = await recordSendMetrics({
+    const { data: metricRecord, error: metricsError } = await recordSendMetrics({
       recipientCount: preparedRecipients.length,
       messageBody: trimmedMessage,
       templateId: selectedTemplateId,
@@ -542,7 +674,35 @@ function App() {
     if (metricsError) {
       console.warn('Failed to persist send metrics:', metricsError)
     }
-  }, [appendStatus, linkMode, modeDetails.shortLabel, openWhatsAppLink, preparedRecipients.length, selectedTemplateId, t, trimmedMessage, urlPayloads])
+
+    if (preparedRecipients.length > 0) {
+      const resolved = await resolveContactIds(preparedRecipients)
+      const contactIds = Array.from(
+        new Set(
+          preparedRecipients
+            .map((digits) => resolved.get(digits))
+            .filter(Boolean),
+        ),
+      )
+
+      if (contactIds.length > 0) {
+        const { error: contactSendsError } = await recordContactSends({
+          contactIds,
+          sendMetricId: metricRecord?.id ?? null,
+          sentAt: metricRecord?.sent_at ?? new Date().toISOString(),
+        })
+
+        if (contactSendsError) {
+          console.warn('Failed to persist contact sends:', contactSendsError)
+        }
+      }
+    }
+    return { attempts }
+  }, [appendStatus, linkMode, modeDetails.shortLabel, openWhatsAppLink, preparedRecipients, resolveContactIds, selectedTemplateId, t, trimmedMessage, urlPayloads])
+
+  const handleLaunch = useCallback(async () => {
+    await runLaunch()
+  }, [runLaunch])
 
   const handleReplayLaunch = useCallback(() => {
     setLastLaunchReport((previous) => {
@@ -605,10 +765,31 @@ function App() {
       }
       const selectedSet = new Set(preparedRecipients)
       if (selectedSet.has(digits)) {
-        appendStatus('info', t('contacts.select.alreadyAdded', { phone: formatPhone(digits), name: contactLabel }))
+        selectedSet.delete(digits)
+        setContactIdMap((previous) => {
+          if (!previous || !(digits in previous)) {
+            return previous
+          }
+          const next = { ...previous }
+          delete next[digits]
+          return next
+        })
+        const nextInput = Array.from(selectedSet)
+          .map((value) => formatPhone(value))
+          .join('\n')
+        setRecipientInput(nextInput)
+        appendStatus('info', t('contacts.select.removed', { phone: formatPhone(digits), name: contactLabel }))
         return
       }
       selectedSet.add(digits)
+      if (contact.id) {
+        setContactIdMap((previous) => {
+          if (previous[digits] === contact.id) {
+            return previous
+          }
+          return { ...previous, [digits]: contact.id }
+        })
+      }
       const nextInput = Array.from(selectedSet)
         .map((value) => formatPhone(value))
         .join('\n')
@@ -617,6 +798,7 @@ function App() {
     },
     [appendStatus, preparedRecipients, t],
   )
+
 
   if (!isSupabaseReady()) {
     return (
@@ -746,7 +928,6 @@ function App() {
                 setSelectedTemplateId(templateId)
               }}
               onClear={() => setSelectedTemplateId(null)}
-              onRefresh={loadTemplates}
               onManage={handleOpenTemplateManager}
             />
             <div className="flex flex-col gap-2">
@@ -820,14 +1001,20 @@ function App() {
                     >
                       <div className="flex flex-col min-w-0 gap-1">
                         <span className="text-sm font-semibold text-slate-100">{formatPhone(attempt.phone)}</span>
-                        <a
-                          href={attempt.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-blue-300 underline truncate"
-                        >
-                          {attempt.url}
-                        </a>
+                        {(() => {
+                          const linkLabel = truncateLogMessage(attempt.url, 96)
+                          return (
+                            <a
+                              href={attempt.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-blue-300 underline"
+                              title={attempt.url}
+                            >
+                              {linkLabel}
+                            </a>
+                          )
+                        })()}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <span
@@ -921,7 +1108,7 @@ function App() {
                   const displayMessage = truncateLogMessage(fullMessage)
                   return (
                     <span className="min-w-0 text-sm text-slate-100">
-                      <span className="block overflow-hidden text-ellipsis whitespace-nowrap" title={fullMessage}>
+                      <span className="block break-words sm:overflow-hidden sm:text-ellipsis sm:whitespace-nowrap" title={fullMessage}>
                         {displayMessage}
                       </span>
                     </span>

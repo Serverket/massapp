@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { startTransition, useEffect, useMemo, useState } from 'react'
 import { isSupabaseReady, supabase } from '../lib/supabaseClient.js'
 
 const STATUS_FILTERS = [
@@ -50,12 +50,16 @@ export function ContactsPanel({
 
   useEffect(() => {
     if (isDisabled) {
-      setState({ data: [], loading: false, error: new Error('Supabase is not configured') })
+      startTransition(() => {
+        setState({ data: [], loading: false, error: new Error(t('contacts.missingSupabase')) })
+      })
       return
     }
 
     let isCancelled = false
-    setState((prev) => ({ ...prev, loading: true, error: null }))
+    startTransition(() => {
+      setState((prev) => ({ ...prev, loading: true, error: null }))
+    })
 
     const run = async () => {
       let query = supabase
@@ -76,9 +80,13 @@ export function ContactsPanel({
 
       if (!isCancelled) {
         if (error) {
-          setState({ data: [], loading: false, error })
+          startTransition(() => {
+            setState({ data: [], loading: false, error })
+          })
         } else {
-          setState({ data: data ?? [], loading: false, error: null })
+          startTransition(() => {
+            setState({ data: data ?? [], loading: false, error: null })
+          })
         }
       }
     }
@@ -88,7 +96,7 @@ export function ContactsPanel({
     return () => {
       isCancelled = true
     }
-  }, [debouncedSearch, statusFilter, isDisabled, refreshToken])
+  }, [debouncedSearch, statusFilter, isDisabled, refreshToken, t])
 
   const { data, loading, error } = state
 
@@ -216,19 +224,19 @@ export function ContactsPanel({
                         }`}
                         aria-pressed={interactive ? isSelected : undefined}
                       >
-                        <span className="min-w-0 truncate" title={contact.full_name}>
+                        <span className="min-w-0 break-words md:truncate" title={contact.full_name}>
                           <span className="block text-xs font-semibold uppercase text-slate-400 md:hidden">{t('contacts.columns.name')}</span>
                           {contact.full_name}
                         </span>
-                        <span className="min-w-0 truncate" title={contact.company || ''}>
+                        <span className="min-w-0 break-words md:truncate" title={contact.company || ''}>
                           <span className="block text-xs font-semibold uppercase text-slate-400 md:hidden">{t('contacts.columns.company')}</span>
                           {contact.company || '—'}
                         </span>
-                        <span className="min-w-0 truncate" title={contact.email || ''}>
+                        <span className="min-w-0 break-words md:truncate" title={contact.email || ''}>
                           <span className="block text-xs font-semibold uppercase text-slate-400 md:hidden">{t('contacts.columns.email')}</span>
                           {contact.email || '—'}
                         </span>
-                        <span className="min-w-0 truncate" title={contact.phone || ''}>
+                        <span className="min-w-0 break-words md:truncate" title={contact.phone || ''}>
                           <span className="block text-xs font-semibold uppercase text-slate-400 md:hidden">{t('contacts.columns.phone')}</span>
                           {contact.phone || '—'}
                         </span>

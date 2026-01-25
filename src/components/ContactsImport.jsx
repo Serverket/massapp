@@ -94,10 +94,13 @@ async function loadRows(file) {
   if (extension === 'xlsx' || extension === 'xls') {
     return parseSpreadsheet(file)
   }
-  throw new Error('Unsupported file type')
+  const error = new Error('contacts.import.unsupportedType')
+  error.code = 'contacts.import.unsupportedType'
+  throw error
 }
 
 const CHUNK_SIZE = 500
+const UNSUPPORTED_FILE_ERROR = 'contacts.import.unsupportedType'
 
 function chunkArray(items, size) {
   if (size <= 0) {
@@ -224,7 +227,18 @@ export function ContactsImport({ t, onImportComplete }) {
       } catch (error) {
         console.error('Failed to import contacts:', error)
         setStatus('error')
-        setMessage(t('contacts.import.error', { message: error.message }))
+        if (error?.code === UNSUPPORTED_FILE_ERROR || error?.message === UNSUPPORTED_FILE_ERROR) {
+          setMessage(t(UNSUPPORTED_FILE_ERROR))
+        } else {
+          const detailedMessage = error && typeof error === 'object' && typeof error.message === 'string' && error.message.trim().length > 0
+            ? error.message.trim()
+            : typeof error === 'string'
+              ? error
+              : error && typeof error === 'object' && typeof error.code === 'string' && error.code.trim().length > 0
+                ? error.code.trim()
+                : String(error)
+          setMessage(t('contacts.import.error', { message: detailedMessage }))
+        }
       } finally {
         if (inputRef.current) {
           inputRef.current.value = ''

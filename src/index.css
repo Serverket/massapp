@@ -15,6 +15,27 @@
     @apply m-0 min-h-screen bg-massapp-flare font-sans text-slate-200 antialiased;
   }
 
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.blue.400') transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: theme('colors.blue.400');
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
   a {
     @apply text-inherit no-underline;
   }

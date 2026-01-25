@@ -1,9 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import en from './en.json'
 import es from './es.json'
+import { DEFAULT_LOCALE, TranslationContext } from './TranslationContext.js'
 
 const TRANSLATIONS = { en, es }
-const DEFAULT_LOCALE = 'en'
 const STORAGE_KEY = 'massapp.locale'
 
 function normalizeLocale(value) {
@@ -31,12 +31,6 @@ function getInitialLocale() {
   }
   return DEFAULT_LOCALE
 }
-
-const TranslationContext = createContext({
-  locale: DEFAULT_LOCALE,
-  setLocale: () => {},
-  t: (key) => key,
-})
 
 export function TranslationProvider({ children }) {
   const [locale, setLocaleState] = useState(getInitialLocale)
@@ -77,12 +71,4 @@ export function TranslationProvider({ children }) {
   )
 
   return <TranslationContext.Provider value={value}>{children}</TranslationContext.Provider>
-}
-
-export function useTranslation() {
-  const context = useContext(TranslationContext)
-  if (!context) {
-    throw new Error('useTranslation must be used within a TranslationProvider')
-  }
-  return context
 }

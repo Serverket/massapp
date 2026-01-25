@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { startTransition, useEffect, useMemo, useState } from 'react'
 import { upsertTemplate, removeTemplate } from '../lib/storage.js'
 
 function normalizeLocale(value) {
@@ -22,11 +22,13 @@ export function TemplateManagerModal({ t, open, templates, onClose, onSaved, onD
 
   useEffect(() => {
     if (!open) {
-      setSelectedId(null)
-      setName('')
-      setLocale('')
-      setBody('')
-      setStatus(null)
+      startTransition(() => {
+        setSelectedId(null)
+        setName('')
+        setLocale('')
+        setBody('')
+        setStatus(null)
+      })
     }
   }, [open])
 
@@ -35,19 +37,23 @@ export function TemplateManagerModal({ t, open, templates, onClose, onSaved, onD
       return
     }
     if (!selectedId) {
-      setName('')
-      setLocale('')
-      setBody('')
+      startTransition(() => {
+        setName('')
+        setLocale('')
+        setBody('')
+      })
       return
     }
     const template = templateMap.get(selectedId)
     if (!template) {
       return
     }
-    setName(template.name ?? '')
-    setLocale(template.locale ?? '')
-    setBody(template.body ?? '')
-    setStatus(null)
+    startTransition(() => {
+      setName(template.name ?? '')
+      setLocale(template.locale ?? '')
+      setBody(template.body ?? '')
+      setStatus(null)
+    })
   }, [open, selectedId, templateMap])
 
   if (!open) {

@@ -9,7 +9,6 @@ export function TemplatePicker({
   onSelect,
   onApply,
   onClear,
-  onRefresh,
   onManage,
 }) {
   const options = useMemo(
@@ -27,14 +26,6 @@ export function TemplatePicker({
           <p className="text-xs text-slate-400">{t('templates.subtitle')}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={loading}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-700/60 bg-slate-900/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-300 transition hover:border-slate-500/70 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {t('templates.refresh')}
-          </button>
           <button
             type="button"
             onClick={onManage}

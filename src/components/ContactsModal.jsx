@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { startTransition, useEffect, useMemo, useState } from 'react'
 import { supabase, isSupabaseReady } from '../lib/supabaseClient.js'
 
 const STATUS_FILTERS = [
@@ -96,12 +96,16 @@ export function ContactsModal({ t, open, onClose, refreshToken, totalContacts, o
       return
     }
     if (!isSupabaseReady()) {
-      setState({ data: [], loading: false, error: new Error(t('contacts.modal.missingSupabase')), total: null })
+      startTransition(() => {
+        setState({ data: [], loading: false, error: new Error(t('contacts.modal.missingSupabase')), total: null })
+      })
       return
     }
 
     let isCancelled = false
-    setState((prev) => ({ ...prev, loading: true, error: null }))
+    startTransition(() => {
+      setState((prev) => ({ ...prev, loading: true, error: null }))
+    })
 
     const run = async () => {
       const result = await fetchContacts({ statusFilter, search: debouncedSearch, showAll })
@@ -109,9 +113,13 @@ export function ContactsModal({ t, open, onClose, refreshToken, totalContacts, o
         return
       }
       if (result.error) {
-        setState({ data: [], loading: false, error: result.error, total: null })
+        startTransition(() => {
+          setState({ data: [], loading: false, error: result.error, total: null })
+        })
       } else {
-        setState({ data: result.data ?? [], loading: false, error: null, total: result.total })
+        startTransition(() => {
+          setState({ data: result.data ?? [], loading: false, error: null, total: result.total })
+        })
       }
     }
 
@@ -124,9 +132,11 @@ export function ContactsModal({ t, open, onClose, refreshToken, totalContacts, o
 
   useEffect(() => {
     if (!open) {
-      setSearch('')
-      setStatusFilter('all')
-      setShowAll(false)
+      startTransition(() => {
+        setSearch('')
+        setStatusFilter('all')
+        setShowAll(false)
+      })
     }
   }, [open])
 
@@ -207,7 +217,7 @@ export function ContactsModal({ t, open, onClose, refreshToken, totalContacts, o
             {t('contacts.modal.close')}
           </button>
         </div>
-        <div className="max-h-[65vh] overflow-y-auto rounded-xl border border-slate-700/40">
+        <div className="max-h-[65vh] overflow-x-auto overflow-y-auto rounded-xl border border-slate-700/40">
           {state.loading ? (
             <div className="px-4 py-6 text-sm text-slate-400">{t('contacts.loading')}</div>
           ) : state.error ? (
@@ -215,7 +225,7 @@ export function ContactsModal({ t, open, onClose, refreshToken, totalContacts, o
           ) : state.data.length === 0 ? (
             <div className="px-4 py-6 text-sm text-slate-400">{t('contacts.modal.empty')}</div>
           ) : (
-            <table className="min-w-full divide-y divide-slate-800/60 text-left text-sm text-slate-100">
+            <table className="min-w-full table-fixed divide-y divide-slate-800/60 text-left text-sm text-slate-100">
               <thead className="bg-slate-800/60 text-xs uppercase tracking-wide text-slate-300">
                 <tr>
                   <th className="px-4 py-2 font-semibold">{t('contacts.columns.name')}</th>
@@ -256,11 +266,11 @@ export function ContactsModal({ t, open, onClose, refreshToken, totalContacts, o
                         tabIndex={interactive ? 0 : undefined}
                         aria-pressed={interactive ? isSelected : undefined}
                       >
-                        <td className="px-4 py-2 font-semibold text-slate-100">{contact.full_name}</td>
-                        <td className="px-4 py-2 text-slate-300">{contact.company || '—'}</td>
-                        <td className="px-4 py-2 text-slate-300">{contact.email || '—'}</td>
-                        <td className="px-4 py-2 text-slate-300">{contact.phone || '—'}</td>
-                        <td className="px-4 py-2 text-slate-300">
+                        <td className="px-4 py-2 font-semibold text-slate-100 break-words">{contact.full_name}</td>
+                        <td className="px-4 py-2 text-slate-300 break-words">{contact.company || '—'}</td>
+                        <td className="px-4 py-2 text-slate-300 break-words">{contact.email || '—'}</td>
+                        <td className="px-4 py-2 text-slate-300 break-words">{contact.phone || '—'}</td>
+                        <td className="px-4 py-2 text-slate-300 break-words">
                           <span className="inline-flex items-center gap-2">
                             <span className={`h-2.5 w-2.5 rounded-full ${contact.status === 'green' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
                             <span className="text-xs uppercase tracking-wide text-slate-300">

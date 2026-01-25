@@ -25,6 +25,26 @@ export async function fetchTemplates() {
   return { data: data ?? [], error }
 }
 
+export async function recordContactSends({ contactIds, sendMetricId = null, sentAt = null }) {
+  if (!isSupabaseReady()) {
+    return { error: new Error('Supabase client is not configured') }
+  }
+
+  const uniqueIds = Array.from(new Set(contactIds ?? [])).filter(Boolean)
+  if (uniqueIds.length === 0) {
+    return { error: null }
+  }
+
+  const rows = uniqueIds.map((contactId) => ({
+    contact_id: contactId,
+    send_metric_id: sendMetricId,
+    ...(sentAt ? { sent_at: sentAt } : {}),
+  }))
+
+  const { error } = await supabase.from('contact_sends').insert(rows, { returning: 'minimal' })
+  return { error }
+}
+
 export async function upsertTemplate({ id, name, body, locale }) {
   if (!isSupabaseReady()) {
     return { error: new Error('Supabase client is not configured') }
