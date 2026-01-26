@@ -35,6 +35,8 @@ export function ContactsPanel({
   selectedPhones = [],
   className = '',
   onStatusChange,
+  flaggedPhones = [],
+  onFlagToggle,
 }) {
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
@@ -52,6 +54,13 @@ export function ContactsPanel({
         .filter(Boolean),
     )
   }, [selectedPhones])
+  const flaggedSet = useMemo(() => {
+    return new Set(
+      (flaggedPhones ?? [])
+        .map((value) => extractDigits(value))
+        .filter(Boolean),
+    )
+  }, [flaggedPhones])
 
   useEffect(() => {
     return () => {
@@ -199,6 +208,17 @@ export function ContactsPanel({
     [isDisabled, onStatusChange, statusFilter],
   )
 
+  const handleFlagToggle = useCallback(
+    (event, contact) => {
+      event.preventDefault()
+      event.stopPropagation()
+      if (typeof onFlagToggle === 'function') {
+        onFlagToggle(contact)
+      }
+    },
+    [onFlagToggle],
+  )
+
   const { data, loading, error } = state
 
   const statusSummary = useMemo(() => {
@@ -307,6 +327,7 @@ export function ContactsPanel({
                   {(() => {
                     const phoneDigits = extractDigits(contact.phone)
                     const isSelected = phoneDigits && selectedSet.has(phoneDigits)
+                    const isFlagged = phoneDigits && flaggedSet.has(phoneDigits)
                     const interactive = typeof onSelectContact === 'function'
                     return (
                       <button
@@ -338,10 +359,27 @@ export function ContactsPanel({
                           <span className="block text-xs font-semibold uppercase text-slate-400 md:hidden">{t('contacts.columns.email')}</span>
                           {contact.email || '—'}
                         </span>
-                        <span className="min-w-0 break-words md:truncate" title={contact.phone || ''}>
+                        <div className="min-w-0 md:truncate" title={contact.phone || ''}>
                           <span className="block text-xs font-semibold uppercase text-slate-400 md:hidden">{t('contacts.columns.phone')}</span>
-                          {contact.phone || '—'}
-                        </span>
+                          <div className="group/phone flex min-w-0 items-center gap-2">
+                            <span className="min-w-0 break-words md:truncate">{contact.phone || '—'}</span>
+                            {contact.phone ? (
+                              <button
+                                type="button"
+                                onClick={(event) => handleFlagToggle(event, contact)}
+                                aria-pressed={isFlagged}
+                                aria-label={isFlagged ? t('contacts.flag.remove') : t('contacts.flag.add')}
+                                className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[0.7rem] transition ${
+                                  isFlagged
+                                    ? 'border border-amber-300/60 bg-amber-400/10 text-amber-300 opacity-100 shadow-[0_0_6px_rgba(251,191,36,0.25)]'
+                                    : 'border border-transparent text-slate-500/0 opacity-0 group-hover/phone:text-slate-400/90 group-hover/phone:opacity-100 hover:text-amber-300 hover:opacity-100'
+                                }`}
+                              >
+                                🚩
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
                         <span className="flex items-center gap-2">
                           <span className="block text-xs font-semibold uppercase text-slate-400 md:hidden">{t('contacts.columns.status')}</span>
                           <span

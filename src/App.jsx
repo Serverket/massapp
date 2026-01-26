@@ -81,6 +81,7 @@ const SUPABASE_INDICATOR_STYLES = {
 
 const TEMPLATE_CACHE_KEY = 'massapp:templates-cache'
 const TEMPLATE_CACHE_MAX_AGE_MS = 5 * 60 * 1000
+const FLAGGED_PHONES_STORAGE_KEY = 'massapp:flagged-phones'
 
 function readTemplateCache() {
   if (typeof window === 'undefined' || !window?.localStorage) {
@@ -119,6 +120,47 @@ function writeTemplateCache(items) {
     window.localStorage.setItem(TEMPLATE_CACHE_KEY, JSON.stringify(payload))
   } catch (error) {
     console.warn('Failed to write template cache', error)
+  }
+}
+
+function readFlaggedPhones() {
+  if (typeof window === 'undefined' || !window?.localStorage) {
+    return []
+  }
+  try {
+    const raw = window.localStorage.getItem(FLAGGED_PHONES_STORAGE_KEY)
+    if (!raw) {
+      return []
+    }
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+    const normalized = parsed
+      .map((value) => normalizePhoneDigits(value))
+      .filter(Boolean)
+    return Array.from(new Set(normalized))
+  } catch (error) {
+    console.warn('Failed to read flagged phones', error)
+    return []
+  }
+}
+
+function writeFlaggedPhones(values) {
+  if (typeof window === 'undefined' || !window?.localStorage) {
+    return
+  }
+  try {
+    const payload = Array.from(
+      new Set(
+        (values ?? [])
+          .map((value) => normalizePhoneDigits(value))
+          .filter(Boolean),
+      ),
+    )
+    window.localStorage.setItem(FLAGGED_PHONES_STORAGE_KEY, JSON.stringify(payload))
+  } catch (error) {
+    console.warn('Failed to write flagged phones', error)
   }
 }
 
@@ -219,6 +261,7 @@ function App() {
   const [contactsRefreshToken, setContactsRefreshToken] = useState(0)
   const [contactsModalOpen, setContactsModalOpen] = useState(false)
   const [templateManagerOpen, setTemplateManagerOpen] = useState(false)
+  const [flaggedPhones, setFlaggedPhones] = useState(() => readFlaggedPhones())
 
   const modeDetails = useMemo(() => {
     const config = LINK_MODES[linkMode] ?? LINK_MODES.web
@@ -361,6 +404,31 @@ function App() {
   const handleCloseTemplateManager = useCallback(() => {
     setTemplateManagerOpen(false)
   }, [])
+
+  useEffect(() => {
+    writeFlaggedPhones(flaggedPhones)
+  }, [flaggedPhones])
+
+  const handleToggleContactFlag = useCallback(
+    (contact) => {
+      const digits = normalizePhoneDigits(contact?.phone ?? contact)
+      if (!digits) {
+        return
+      }
+      setFlaggedPhones((prev) => {
+        const next = new Set(prev)
+        if (next.has(digits)) {
+          next.delete(digits)
+          appendStatus('info', t('contacts.flag.logRemoved', { phone: formatPhone(digits) }))
+        } else {
+          next.add(digits)
+          appendStatus('warning', t('contacts.flag.logAdded', { phone: formatPhone(digits) }))
+        }
+        return Array.from(next)
+      })
+    },
+    [appendStatus, t],
+  )
 
   useEffect(() => {
     if (templateManagerOpen && session && isSupabaseReady()) {
@@ -646,7 +714,7 @@ function App() {
       return { phone, url, opened }
     })
 
-      const launchReport = {
+    const launchReport = {
       attempts,
       mode: linkMode,
       message: trimmedMessage,
@@ -919,23 +987,37 @@ function App() {
         </div>
       </header>
 
-      <main className="mt-8 flex flex-col gap-8">
+      <main className="flex flex-col gap-8 mt-8">
         <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-4 xl:items-stretch">
           <article className={`${CARD_BASE} gap-6 xl:col-span-2 xl:self-start`}>
             <div className="flex flex-col gap-1.5">
               <h2 className="text-xl font-semibold text-slate-100">{launcherTitle}</h2>
               <p className="text-sm text-slate-400">{launcherDescription}</p>
             </div>
-            <label className="flex flex-col gap-2 text-sm">
-              <span className="font-semibold text-slate-200">{recipientsLabel}</span>
+            <div className="flex flex-col gap-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <label htmlFor="recipients-input" className="font-semibold text-slate-200">
+                  {recipientsLabel}
+                </label>
+                {recipientCount > 0 ? (
+                  <button
+                    type="button"
+                    className={`${BUTTON_SECONDARY} w-auto h-9 px-3 text-xs sm:text-sm`}
+                    onClick={handleLaunch}
+                  >
+                    {openTabsLabel}
+                  </button>
+                ) : null}
+              </div>
               <textarea
+                id="recipients-input"
                 value={recipientInput}
                 onChange={(event) => setRecipientInput(event.target.value)}
                 placeholder={recipientsPlaceholder}
                 rows={4}
                 className="w-full min-h-[6.5rem] max-h-60 resize-none overflow-y-auto rounded-xl border border-slate-700/60 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
               />
-            </label>
+            </div>
             <label className="flex flex-col gap-2 text-sm">
               <span className="font-semibold text-slate-200">{messageLabel}</span>
               <textarea
@@ -1006,7 +1088,12 @@ function App() {
               <p className="text-xs text-slate-400">{modeDetails.description}</p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-3">
-              <button type="button" className={BUTTON_PRIMARY} onClick={handleLaunch}>
+              <button
+                type="button"
+                className={BUTTON_PRIMARY}
+                onClick={handleLaunch}
+                disabled={recipientCount === 0}
+              >
                 {openTabsLabel}
               </button>
             </div>
@@ -1053,7 +1140,7 @@ function App() {
                               href={attempt.url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-blue-300 underline"
+                              className="block max-w-full overflow-hidden text-xs text-blue-300 underline text-ellipsis whitespace-nowrap"
                               title={attempt.url}
                             >
                               {linkLabel}
@@ -1093,6 +1180,8 @@ function App() {
             selectedPhones={preparedRecipients}
             className="xl:col-span-2 xl:self-stretch"
             onStatusChange={handleContactStatusChange}
+            flaggedPhones={flaggedPhones}
+            onFlagToggle={handleToggleContactFlag}
           />
         </div>
 
@@ -1177,6 +1266,8 @@ function App() {
         onSyncContacts={() => {
           setContactsRefreshToken((token) => token + 1)
         }}
+        flaggedPhones={flaggedPhones}
+        onFlagToggle={handleToggleContactFlag}
       />
       <TemplateManagerModal
         t={t}

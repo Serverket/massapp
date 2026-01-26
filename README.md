@@ -2,7 +2,7 @@
 
 ![MassApp cover](public/readme-cover.svg)
 
-[![Version](https://img.shields.io/badge/version-3.0.0-6366f1.svg?style=for-the-badge)](package.json) [![Build Tool](https://img.shields.io/badge/bundler-vite-38bdf8.svg?style=for-the-badge)](vite.config.js) [![License](https://img.shields.io/badge/license-MIT-10b981.svg?style=for-the-badge)](LICENSE)
+[![Version](https://img.shields.io/badge/version-3.4.0-6366f1.svg?style=for-the-badge)](package.json) [![Build Tool](https://img.shields.io/badge/bundler-vite-38bdf8.svg?style=for-the-badge)](vite.config.js) [![License](https://img.shields.io/badge/license-MIT-10b981.svg?style=for-the-badge)](LICENSE)
 
 MassApp is a Vite + React progressive web app that turns recipient lists into ready-to-send WhatsApp chats. Paste or type your numbers, compose the message once, and launch custom WhatsApp campaigns in seconds.
 
@@ -45,25 +45,65 @@ bun run preview     # optional: serve the production build locally
 
 If your browser blocks the pop-up batch, use the preview list to open or copy links manually.
 
-### 🤖 BrowserOS companion
+## 🚀 BrowserOS Workflow = Full Automation (Optional)
 
-MassApp stays in-browser, but you can hand off the final “press send” step to [BrowserOS](https://github.com/browseros-ai) for a supervised automation flow:
+This streamlined workflow automates sending WhatsApp messages to pending contacts through MassApp and marking them as sent. The Bulk Tab Launcher input clears automatically when the contact status updates to SENT, so you never need a manual cleanup step.
 
-1. Launch your campaign in MassApp so WhatsApp tabs open with the composed message.
-2. Switch to BrowserOS and make sure it can control the browser session where the tabs are open.
-3. Provide the following prompt so BrowserOS clicks the send button on every tab:
+#### Phase 1: Select Contact
 
+1. Click once on a contact that shows **Pending** in the MassApp contacts panel.
+2. MassApp highlights the row, drops the phone number into the **Recipients** field, and preloads the message.
+
+#### Phase 2: Send in WhatsApp
+
+3. Click **Open WhatsApp Tabs** to launch WhatsApp Web in a new browser tab with the prefilled conversation.
+4. In WhatsApp Web, press the **Enviar** button so the message sends and clears from the input.
+
+#### Phase 3: Close WhatsApp & Mark as Sent
+
+5. Close the WhatsApp browser tab to return focus to MassApp.
+6. Double-click the same contact row to flip its status to **Sent**. The Bulk Tab Launcher input clears instantly, the contact moves out of the **Pending** filter, and the next pending contact becomes visible.
+
+##### Complete Workflow Summary
+
+| Step | Action | Location | Result |
+| --- | --- | --- | --- |
+| 1 | Single-click pending contact | MassApp contacts panel | Contact selected, phone populates Recipients field |
+| 2 | Click **Open WhatsApp Tabs** | MassApp launcher | WhatsApp tab opens with conversation ready |
+| 3 | Click **Enviar** | WhatsApp Web | Message sends with delivery timestamp |
+| 4 | Close WhatsApp tab | Browser tab bar | Focus returns to MassApp |
+| 5 | Double-click contact | MassApp contacts panel | Status updates to Sent, input clears, contact leaves Pending |
+
+##### Repeat Cycle
+
+- Filtered view shows only pending contacts.
+- Marking a contact as sent removes it from Pending, exposing the next contact.
+- The Bulk Tab Launcher input clears automatically, so the five-step loop restarts immediately.
+
+##### Key Points
+
+- Single-click selects; double-click marks as sent.
+- Always close the WhatsApp tab before jumping back to MassApp.
+- Messages stay pre-populated—no retyping required.
+- Automatic filtering and input cleanup keep the workflow continuous.
+
+##### Troubleshooting
+
+- WhatsApp tab blocked? Allow pop-ups in the browser.
+- Contact not selected? Confirm the **Pending** filter is active.
+- Status didn’t change? Double-click with a slight pause between taps.
+- Message stuck? Make sure WhatsApp Web finished loading before sending.
+- List stale? Refresh MassApp and reapply the **Pending** filter.
+- Input didn’t clear? Refresh MassApp to resync the state.
+
+```mermaid
+flowchart TD
+	A[Select pending contact in MassApp] --> B[Launch WhatsApp tab]
+	B --> C[Send message via Enviar]
+	C --> D[Close WhatsApp tab]
+	D --> E[Double-click contact to mark Sent]
+	E --> A
 ```
-For each WhatsApp Web tab that opens, perform the following actions in sequence:
-
-Wait for the tab to fully load
-Find and locate the send button on the current tab
-Click the send button
-Switch to the next WhatsApp Web tab
-Repeat steps 2-4 until all WhatsApp Web tabs have been processed
-```
-
-Keep the run supervised: WhatsApp may still request additional confirmation when throttling kicks in.
 
 ## ⚙️ Configuration
 
