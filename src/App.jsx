@@ -799,6 +799,51 @@ function App() {
     [appendStatus, preparedRecipients, t],
   )
 
+  const handleContactStatusChange = useCallback(
+    (contact) => {
+      if (!contact || contact.status !== 'green') {
+        return
+      }
+
+      const digits = normalizePhoneDigits(contact.phone)
+      if (!digits) {
+        return
+      }
+
+      let removed = false
+      setRecipientInput((previous) => {
+        const raw = parseRecipients(previous)
+        const digitsList = raw
+          .map((jid) => jidToDigits(jid))
+          .filter(Boolean)
+
+        if (!digitsList.includes(digits)) {
+          return previous
+        }
+
+        removed = true
+        const nextDigits = digitsList.filter((value) => value !== digits)
+        return nextDigits.map((value) => formatPhone(value)).join('\n')
+      })
+
+      if (!removed) {
+        return
+      }
+
+      setContactIdMap((previous) => {
+        if (!previous || !(digits in previous)) {
+          return previous
+        }
+        const next = { ...previous }
+        delete next[digits]
+        return next
+      })
+
+      appendStatus('info', t('contacts.select.removed', { phone: formatPhone(digits) }))
+    },
+    [appendStatus, t],
+  )
+
 
   if (!isSupabaseReady()) {
     return (
@@ -1047,6 +1092,7 @@ function App() {
             onSelectContact={handleAddContact}
             selectedPhones={preparedRecipients}
             className="xl:col-span-2 xl:self-stretch"
+            onStatusChange={handleContactStatusChange}
           />
         </div>
 
@@ -1127,6 +1173,7 @@ function App() {
         totalContacts={contactTotal}
         onSelectContact={handleAddContact}
         selectedPhones={preparedRecipients}
+        onStatusChange={handleContactStatusChange}
         onSyncContacts={() => {
           setContactsRefreshToken((token) => token + 1)
         }}

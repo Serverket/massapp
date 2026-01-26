@@ -34,6 +34,7 @@ export function ContactsPanel({
   onSelectContact,
   selectedPhones = [],
   className = '',
+  onStatusChange,
 }) {
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
@@ -180,6 +181,8 @@ export function ContactsPanel({
         return
       }
 
+      const mergedContact = { ...contact, ...updatedContact }
+
       setState((prev) => ({
         ...prev,
         data: prev.data.map((item) => (item.id === contact.id ? { ...item, ...updatedContact } : item)),
@@ -188,8 +191,12 @@ export function ContactsPanel({
       if (statusFilter !== 'all') {
         setLocalRefreshVersion((value) => value + 1)
       }
+
+      if (typeof onStatusChange === 'function') {
+        onStatusChange(mergedContact)
+      }
     },
-    [isDisabled, statusFilter],
+    [isDisabled, onStatusChange, statusFilter],
   )
 
   const { data, loading, error } = state

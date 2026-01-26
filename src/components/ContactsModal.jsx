@@ -78,7 +78,7 @@ async function fetchContacts({ statusFilter, search, showAll }) {
   return { data: allRows, error: null, total }
 }
 
-export function ContactsModal({ t, open, onClose, refreshToken, totalContacts, onSelectContact, selectedPhones = [], onSyncContacts }) {
+export function ContactsModal({ t, open, onClose, refreshToken, totalContacts, onSelectContact, selectedPhones = [], onSyncContacts, onStatusChange }) {
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [showAll, setShowAll] = useState(false)
@@ -242,6 +242,8 @@ export function ContactsModal({ t, open, onClose, refreshToken, totalContacts, o
         return
       }
 
+      const mergedContact = { ...contact, ...updatedContact }
+
       setState((prev) => ({
         ...prev,
         data: prev.data.map((item) => (item.id === contact.id ? { ...item, ...updatedContact } : item)),
@@ -252,8 +254,12 @@ export function ContactsModal({ t, open, onClose, refreshToken, totalContacts, o
       }
 
       hasPendingSyncRef.current = true
+
+      if (typeof onStatusChange === 'function') {
+        onStatusChange(mergedContact)
+      }
     },
-    [statusFilter],
+    [onStatusChange, statusFilter],
   )
   useEffect(() => {
     const wasOpen = wasOpenRef.current
