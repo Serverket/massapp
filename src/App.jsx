@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from './i18n/useTranslation.js'
-import { fetchTemplates, recordContactSends, recordSendMetrics } from './lib/storage.js'
+import {
+  fetchTemplates,
+  recordContactSends,
+  recordSendMetrics,
+  fetchFlaggedContacts,
+  setContactFlag,
+} from './lib/storage.js'
 import { isSupabaseReady, supabase } from './lib/supabaseClient.js'
 import { useSupabaseHealth } from './lib/useSupabaseHealth.js'
 import { useSupabaseAuth } from './lib/useSupabaseAuth.js'
@@ -10,6 +16,7 @@ import { TemplatePicker } from './components/TemplatePicker.jsx'
 import { LoginForm } from './components/LoginForm.jsx'
 import { TemplateManagerModal } from './components/TemplateManagerModal.jsx'
 import { ContactsModal } from './components/ContactsModal.jsx'
+import { canSuggestPersonalization, suggestTemplatePersonalization } from './lib/templatePersonalizer.js'
 
 const LIMIT_LOG = 120
 
@@ -81,7 +88,6 @@ const SUPABASE_INDICATOR_STYLES = {
 
 const TEMPLATE_CACHE_KEY = 'massapp:templates-cache'
 const TEMPLATE_CACHE_MAX_AGE_MS = 5 * 60 * 1000
-const FLAGGED_PHONES_STORAGE_KEY = 'massapp:flagged-phones'
 
 function readTemplateCache() {
   if (typeof window === 'undefined' || !window?.localStorage) {
@@ -120,47 +126,6 @@ function writeTemplateCache(items) {
     window.localStorage.setItem(TEMPLATE_CACHE_KEY, JSON.stringify(payload))
   } catch (error) {
     console.warn('Failed to write template cache', error)
-  }
-}
-
-function readFlaggedPhones() {
-  if (typeof window === 'undefined' || !window?.localStorage) {
-    return []
-  }
-  try {
-    const raw = window.localStorage.getItem(FLAGGED_PHONES_STORAGE_KEY)
-    if (!raw) {
-      return []
-    }
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) {
-      return []
-    }
-    const normalized = parsed
-      .map((value) => normalizePhoneDigits(value))
-      .filter(Boolean)
-    return Array.from(new Set(normalized))
-  } catch (error) {
-    console.warn('Failed to read flagged phones', error)
-    return []
-  }
-}
-
-function writeFlaggedPhones(values) {
-  if (typeof window === 'undefined' || !window?.localStorage) {
-    return
-  }
-  try {
-    const payload = Array.from(
-      new Set(
-        (values ?? [])
-          .map((value) => normalizePhoneDigits(value))
-          .filter(Boolean),
-      ),
-    )
-    window.localStorage.setItem(FLAGGED_PHONES_STORAGE_KEY, JSON.stringify(payload))
-  } catch (error) {
-    console.warn('Failed to write flagged phones', error)
   }
 }
 
@@ -217,6 +182,96 @@ function normalizePhoneDigits(value) {
   return digits.length >= 6 ? digits : null
 }
 
+function detectMessageLanguage(message, fallbackLocale = 'en') {
+  if (!message || typeof message !== 'string') {
+    return fallbackLocale ?? 'en'
+  }
+
+  const sample = message.trim().slice(0, 360).toLowerCase()
+
+  if (!sample) {
+    return fallbackLocale ?? 'en'
+  }
+
+  const spanishIndicators = /[áéíóúñü¡¿]|\b(hola|buenos días|buenas tardes|gracias|equipo|cliente|cotización|favor|adjunto|seguimiento|estimad[ao]|disculpa|por favor|mensaje)\b/
+  if (spanishIndicators.test(sample)) {
+    return 'es'
+  }
+
+  const englishIndicators = /\b(hello|thanks|thank you|team|follow up|please|update|message|kind regards|dear)\b/
+  if (englishIndicators.test(sample)) {
+    return 'en'
+  }
+
+  return fallbackLocale ?? 'en'
+}
+
+const PLACEHOLDER_NAME_KEYWORDS = [
+  'client',
+  'cliente',
+  'contact',
+  'contacto',
+  'unknown',
+  'desconocido',
+  'desconocida',
+  'sin nombre',
+  'placeholder',
+  'test',
+  'prueba',
+  'demo',
+  'sample',
+  'usuario',
+  'user',
+  'nombre',
+  'name',
+  'company',
+  'compania',
+  'compañia',
+  'empresa',
+  'team',
+  'equipo',
+]
+
+function isLikelyPlaceholderName(rawName) {
+  if (!rawName || typeof rawName !== 'string') {
+    return true
+  }
+
+  const normalized = rawName.trim()
+  if (normalized.length < 2) {
+    return true
+  }
+
+  if (!/[a-záéíóúñü]/i.test(normalized)) {
+    return true
+  }
+
+  if (/\d/.test(normalized)) {
+    return true
+  }
+
+  if (/[{}\[\]_]/.test(normalized)) {
+    return true
+  }
+
+  const lower = normalized.toLowerCase()
+  if (PLACEHOLDER_NAME_KEYWORDS.some((keyword) => lower.includes(keyword))) {
+    return true
+  }
+
+  const words = normalized.split(/\s+/)
+  const hasValidWord = words.some((word) => /^[a-záéíóúñü'\-]{2,}$/i.test(word))
+  return !hasValidWord
+}
+
+function resolveFallbackContactName(languageHint, locale = 'en') {
+  const hint = (languageHint ?? locale ?? 'en').toLowerCase()
+  if (hint.startsWith('es')) {
+    return 'Colega'
+  }
+  return 'Partner'
+}
+
 function truncateLogMessage(message, limit = 96) {
   if (!message) {
     return ''
@@ -261,7 +316,13 @@ function App() {
   const [contactsRefreshToken, setContactsRefreshToken] = useState(0)
   const [contactsModalOpen, setContactsModalOpen] = useState(false)
   const [templateManagerOpen, setTemplateManagerOpen] = useState(false)
-  const [flaggedPhones, setFlaggedPhones] = useState(() => readFlaggedPhones())
+  const [flaggedPhones, setFlaggedPhones] = useState([])
+  const [aiSuggestion, setAiSuggestion] = useState(null)
+  const [aiSuggestionLoading, setAiSuggestionLoading] = useState(false)
+  const [aiSuggestionError, setAiSuggestionError] = useState(null)
+  const [aiSuggestionVisible, setAiSuggestionVisible] = useState(false)
+  const [aiContactPreview, setAiContactPreview] = useState(null)
+  const aiConfigured = canSuggestPersonalization()
 
   const modeDetails = useMemo(() => {
     const config = LINK_MODES[linkMode] ?? LINK_MODES.web
@@ -405,29 +466,125 @@ function App() {
     setTemplateManagerOpen(false)
   }, [])
 
+  const loadFlaggedContacts = useCallback(async () => {
+    if (!session || !isSupabaseReady()) {
+      setFlaggedPhones([])
+      return
+    }
+
+    try {
+      const { data, error } = await fetchFlaggedContacts()
+      if (error) {
+        throw error
+      }
+
+      const digits = Array.from(
+        new Set(
+          (data ?? [])
+            .map((item) => normalizePhoneDigits(item?.phone))
+            .filter(Boolean),
+        ),
+      )
+
+      setFlaggedPhones(digits)
+    } catch (error) {
+      console.error('Failed to load flagged contacts', error)
+    }
+  }, [session])
+
   useEffect(() => {
-    writeFlaggedPhones(flaggedPhones)
-  }, [flaggedPhones])
+    void loadFlaggedContacts()
+  }, [loadFlaggedContacts, contactsRefreshToken])
+
+  useEffect(() => {
+    if (!session || !isSupabaseReady()) {
+      return undefined
+    }
+
+    const channel = supabase
+      .channel('contacts-flag-sync')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'contacts' }, (payload) => {
+        if (payload?.old?.is_flagged !== payload?.new?.is_flagged) {
+          void loadFlaggedContacts()
+        }
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [loadFlaggedContacts, session])
 
   const handleToggleContactFlag = useCallback(
-    (contact) => {
-      const digits = normalizePhoneDigits(contact?.phone ?? contact)
-      if (!digits) {
+    async (contact) => {
+      if (!contact || !isSupabaseReady()) {
         return
       }
+
+      const digits = normalizePhoneDigits(contact?.phone ?? contact)
+      const contactId = contact?.id ?? null
+
+      if (!digits || !contactId) {
+        return
+      }
+
+      const currentlyFlagged = flaggedPhones.includes(digits)
+      const nextFlag = !currentlyFlagged
+
       setFlaggedPhones((prev) => {
         const next = new Set(prev)
-        if (next.has(digits)) {
-          next.delete(digits)
-          appendStatus('info', t('contacts.flag.logRemoved', { phone: formatPhone(digits) }))
-        } else {
+        if (nextFlag) {
           next.add(digits)
-          appendStatus('warning', t('contacts.flag.logAdded', { phone: formatPhone(digits) }))
+        } else {
+          next.delete(digits)
         }
         return Array.from(next)
       })
+
+      appendStatus(
+        nextFlag ? 'warning' : 'info',
+        t(nextFlag ? 'contacts.flag.logAdded' : 'contacts.flag.logRemoved', {
+          phone: formatPhone(digits),
+        }),
+      )
+
+      const { data, error } = await setContactFlag({
+        contactId,
+        flag: nextFlag,
+        flaggedBy: session?.user?.id ?? null,
+      })
+
+      if (error) {
+        console.error('Failed to update contact flag', error)
+        setFlaggedPhones((prev) => {
+          const next = new Set(prev)
+          if (nextFlag) {
+            next.delete(digits)
+          } else {
+            next.add(digits)
+          }
+          return Array.from(next)
+        })
+        appendStatus('error', t('contacts.flag.logError', { phone: formatPhone(digits) }))
+        return
+      }
+
+      if (data) {
+        const normalized = normalizePhoneDigits(data.phone)
+        const finalFlag = Boolean(data.is_flagged)
+        const targetDigits = normalized || digits
+        setFlaggedPhones((prev) => {
+          const next = new Set(prev)
+          if (finalFlag) {
+            next.add(targetDigits)
+          } else {
+            next.delete(targetDigits)
+          }
+          return Array.from(next)
+        })
+      }
     },
-    [appendStatus, t],
+    [appendStatus, flaggedPhones, session, t],
   )
 
   useEffect(() => {
@@ -470,6 +627,223 @@ function App() {
     return mapped
   }, [recipientInput])
 
+  const resolveContactIds = useCallback(
+    async (phones) => {
+      if (!isSupabaseReady() || phones.length === 0) {
+        return new Map()
+      }
+
+      const resolved = new Map()
+      phones.forEach((digits) => {
+        const knownId = contactIdMap[digits]
+        if (knownId) {
+          resolved.set(digits, knownId)
+        }
+      })
+
+      const unresolved = phones.filter((digits) => !resolved.has(digits))
+      if (unresolved.length === 0) {
+        return resolved
+      }
+
+      const phoneCandidates = Array.from(
+        new Set(
+          unresolved.flatMap((digits) => [digits, `+${digits}`]),
+        ),
+      )
+
+      if (phoneCandidates.length === 0) {
+        return resolved
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('contacts')
+          .select('id, phone')
+          .in('phone', phoneCandidates)
+
+        if (error) {
+          throw error
+        }
+
+        const updates = {}
+        for (const row of data ?? []) {
+          const digits = normalizePhoneDigits(row.phone)
+          if (!digits) {
+            continue
+          }
+          resolved.set(digits, row.id)
+          updates[digits] = row.id
+        }
+
+        if (Object.keys(updates).length > 0) {
+          setContactIdMap((previous) => ({ ...previous, ...updates }))
+        }
+      } catch (error) {
+        console.error('Failed to resolve contact ids', error)
+      }
+
+      return resolved
+    },
+    [contactIdMap, supabase],
+  )
+  const handleRequestAiSuggestion = useCallback(async () => {
+    if (!isSupabaseReady()) {
+      setAiSuggestionVisible(true)
+      setAiSuggestionError(new Error(t('ai.suggest.missingSupabase')))
+      return
+    }
+
+    if (!aiConfigured) {
+      setAiSuggestionVisible(true)
+      setAiSuggestionError(new Error(t('ai.suggest.configure')))
+      return
+    }
+
+    if (!messageBody.trim()) {
+      setAiSuggestionVisible(true)
+      setAiSuggestionError(new Error(t('ai.suggest.noMessage')))
+      return
+    }
+
+    if (preparedRecipients.length === 0) {
+      setAiSuggestionVisible(true)
+      setAiSuggestionError(new Error(t('ai.suggest.noRecipients')))
+      return
+    }
+
+    setAiSuggestionVisible(true)
+    setAiSuggestion(null)
+    setAiContactPreview(null)
+    setAiSuggestionError(null)
+    setAiSuggestionLoading(true)
+
+    try {
+      const formatInFilter = (values) => `(${values.map((value) => `"${value}"`).join(',')})`
+      const languageHint = detectMessageLanguage(messageBody, locale)
+      const targetDigits = preparedRecipients.slice(0, 3)
+      const resolved = await resolveContactIds(targetDigits)
+
+      const ordered = targetDigits.map((digits) => ({
+        digits,
+        id: resolved.get(digits) ?? null,
+      }))
+
+      const contactIds = Array.from(new Set(ordered.map((entry) => entry.id).filter(Boolean)))
+
+      let contactRows = []
+
+      if (contactIds.length > 0) {
+        const inList = formatInFilter(contactIds)
+        const { data, error } = await supabase
+          .from('contacts')
+          .select('id, full_name, phone, email, company')
+          .filter('id', 'in', inList)
+
+        if (error) {
+          throw error
+        }
+
+        contactRows = data ?? []
+      } else {
+        const phoneCandidates = Array.from(
+          new Set(
+            targetDigits.flatMap((digits) => [digits, `+${digits}`]),
+          ),
+        )
+
+        if (phoneCandidates.length > 0) {
+          const inList = formatInFilter(phoneCandidates)
+          const { data, error } = await supabase
+            .from('contacts')
+            .select('id, full_name, phone, email, company')
+            .filter('phone', 'in', inList)
+
+          if (error) {
+            throw error
+          }
+
+          contactRows = data ?? []
+        }
+      }
+
+      const contactMap = new Map(contactRows.map((row) => [row.id, row]))
+      const fallbackContactName = resolveFallbackContactName(languageHint, locale)
+
+      const contactsForAi = ordered
+        .map(({ digits, id }) => {
+          const base = id ? contactMap.get(id) : contactRows.find((row) => normalizePhoneDigits(row?.phone) === digits)
+          if (!base) {
+            return null
+          }
+          const rawFullName = (base.full_name ?? '').trim()
+          const fullName = isLikelyPlaceholderName(rawFullName) ? fallbackContactName : rawFullName
+          let firstName = null
+          let lastName = null
+          if (fullName) {
+            const parts = fullName.split(/\s+/)
+            firstName = parts[0] ?? null
+            lastName = parts.length > 1 ? parts.slice(1).join(' ') : null
+          }
+          return {
+            ...base,
+            digits,
+            full_name: fullName,
+            first_name: firstName,
+            last_name: lastName,
+          }
+        })
+        .filter(Boolean)
+
+      if (contactsForAi.length === 0) {
+        setAiSuggestionError(new Error(t('ai.suggest.noContacts')))
+        setAiSuggestionLoading(false)
+        return
+      }
+
+      setAiContactPreview(contactsForAi[0])
+
+      const { data, error, warning } = await suggestTemplatePersonalization({
+        templateBody: messageBody,
+        contacts: contactsForAi.map(({ digits: _digits, ...rest }) => rest),
+        languageHint,
+      })
+
+      if (warning) {
+        console.warn('Z AI personalization warning:', warning)
+      }
+
+      if (error) {
+        throw error
+      }
+
+      setAiSuggestion(data)
+    } catch (error) {
+      console.error('Failed to generate AI suggestion', error)
+      setAiSuggestion(null)
+      setAiSuggestionError(error instanceof Error ? error : new Error(String(error)))
+    } finally {
+      setAiSuggestionLoading(false)
+    }
+  }, [aiConfigured, locale, messageBody, preparedRecipients, resolveContactIds, supabase, t])
+
+  const handleApplyAiSuggestion = useCallback(() => {
+    if (!aiSuggestion?.message) {
+      return
+    }
+    setMessageBody(aiSuggestion.message)
+    setSelectedTemplateId(null)
+    setAiSuggestionVisible(false)
+    setAiSuggestion(null)
+    setAiSuggestionError(null)
+    setAiContactPreview(null)
+    appendStatus('success', t('ai.suggest.appliedLog'))
+  }, [aiSuggestion, appendStatus, t])
+
+  const handleDismissAiSuggestion = useCallback(() => {
+    setAiSuggestionVisible(false)
+  }, [])
+
   const templateMap = useMemo(() => {
     const map = new Map()
     templates.forEach((template) => map.set(template.id, template))
@@ -482,7 +856,20 @@ function App() {
     }
   }, [selectedTemplateId, templateMap])
 
+  useEffect(() => {
+    if (preparedRecipients.length === 0) {
+      setAiSuggestion(null)
+      setAiSuggestionError(null)
+      setAiSuggestionVisible(false)
+      setAiContactPreview(null)
+    }
+  }, [preparedRecipients])
+
   const recipientCount = preparedRecipients.length
+  const aiEligible = trimmedMessage.length > 0 && recipientCount > 0
+  const aiButtonDisabled = aiSuggestionLoading
+  const showAiButton = trimmedMessage.length > 0
+  const aiButtonActive = aiEligible && aiConfigured
 
   const statusMeta = useMemo(() => {
     const meta = [
@@ -565,6 +952,17 @@ function App() {
   const openTabLabel = t('preview.openTab')
   const copyLinkLabel = t('preview.copyLink')
   const logTitle = t('log.title')
+  const aiButtonLabel = '⚡'
+  const aiTooltipLabel = aiConfigured ? t('ai.suggest.tooltip') : t('ai.suggest.configure')
+  const aiPreviewTitle = t('ai.suggest.previewTitle')
+  const aiApplyLabel = t('ai.suggest.apply')
+  const aiDismissLabel = t('ai.suggest.dismiss')
+  const aiLoadingLabel = t('ai.suggest.loading')
+  const aiSummaryLabel = t('ai.suggest.summaryLabel')
+  const aiHighlightsLabel = t('ai.suggest.highlightsLabel')
+  const aiContactLabel = aiContactPreview?.full_name
+    ? t('ai.suggest.previewContact', { name: aiContactPreview.full_name })
+    : null
 
   const languageTarget = locale === 'en' ? 'es' : 'en'
   const languageButtonLabel = languageTarget === 'es' ? t('actions.switchToSpanish') : t('actions.switchToEnglish')
@@ -626,67 +1024,6 @@ function App() {
 
     return false
   }, [])
-
-  const resolveContactIds = useCallback(
-    async (phones) => {
-      if (!isSupabaseReady() || phones.length === 0) {
-        return new Map()
-      }
-
-      const resolved = new Map()
-      phones.forEach((digits) => {
-        const knownId = contactIdMap[digits]
-        if (knownId) {
-          resolved.set(digits, knownId)
-        }
-      })
-
-      const unresolved = phones.filter((digits) => !resolved.has(digits))
-      if (unresolved.length === 0) {
-        return resolved
-      }
-
-      const phoneCandidates = Array.from(
-        new Set(
-          unresolved.flatMap((digits) => [digits, `+${digits}`]),
-        ),
-      )
-
-      if (phoneCandidates.length === 0) {
-        return resolved
-      }
-
-      try {
-        const { data, error } = await supabase
-          .from('contacts')
-          .select('id, phone')
-          .in('phone', phoneCandidates)
-
-        if (error) {
-          throw error
-        }
-
-        const updates = {}
-        for (const row of data ?? []) {
-          const digits = normalizePhoneDigits(row.phone)
-          if (!digits) {
-            continue
-          }
-          resolved.set(digits, row.id)
-          updates[digits] = row.id
-        }
-
-        if (Object.keys(updates).length > 0) {
-          setContactIdMap((previous) => ({ ...previous, ...updates }))
-        }
-      } catch (error) {
-        console.error('Failed to resolve contact ids', error)
-      }
-
-      return resolved
-    },
-    [contactIdMap],
-  )
 
   const runLaunch = useCallback(async () => {
     if (preparedRecipients.length === 0) {
@@ -1020,22 +1357,133 @@ function App() {
             </div>
             <label className="flex flex-col gap-2 text-sm">
               <span className="font-semibold text-slate-200">{messageLabel}</span>
-              <textarea
-                value={messageBody}
-                onChange={(event) => {
-                  const nextValue = event.target.value
-                  setMessageBody(nextValue)
-                  if (selectedTemplateId) {
-                    const template = templateMap.get(selectedTemplateId)
-                    if (!template || template.body !== nextValue) {
-                      setSelectedTemplateId(null)
+              <div className="relative">
+                <textarea
+                  value={messageBody}
+                  onChange={(event) => {
+                    const nextValue = event.target.value
+                    setMessageBody(nextValue)
+                    setAiSuggestion(null)
+                    setAiSuggestionError(null)
+                    setAiSuggestionVisible(false)
+                    setAiContactPreview(null)
+                    if (selectedTemplateId) {
+                      const template = templateMap.get(selectedTemplateId)
+                      if (!template || template.body !== nextValue) {
+                        setSelectedTemplateId(null)
+                      }
                     }
-                  }
-                }}
-                placeholder={messagePlaceholder}
-                rows={6}
-                className="min-h-[9rem] rounded-xl border border-slate-700/60 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
-              />
+                  }}
+                  placeholder={messagePlaceholder}
+                  rows={6}
+                  className="min-h-[9rem] w-full rounded-xl border border-slate-700/60 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+                />
+                {showAiButton ? (
+                  <div className="absolute top-2 right-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleRequestAiSuggestion}
+                      disabled={aiButtonDisabled}
+                      title={aiTooltipLabel}
+                      className={`inline-flex items-center gap-2 rounded-lg border px-2.5 py-1 text-xs font-semibold uppercase tracking-wide transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                        aiButtonActive
+                          ? 'border-amber-400/40 bg-amber-500/10 text-amber-200 hover:border-amber-300/70 hover:bg-amber-500/20 focus-visible:outline-amber-300'
+                          : 'border-slate-700/60 bg-slate-900/60 text-slate-500 focus-visible:outline-slate-500'
+                      } ${aiButtonDisabled ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    >
+                      <span className="text-base" aria-hidden="true">{aiButtonLabel}</span>
+                      <span className="sr-only">{aiTooltipLabel}</span>
+                    </button>
+                  </div>
+                ) : null}
+                {aiSuggestionVisible ? (
+                  <div className="absolute right-0 z-20 mt-2 w-full max-w-md space-y-3 rounded-xl border border-slate-700/70 bg-slate-950/95 p-4 shadow-xl shadow-slate-950/50">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-semibold text-slate-100">{aiPreviewTitle}</span>
+                        {aiContactLabel ? <span className="text-xs text-slate-400">{aiContactLabel}</span> : null}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleDismissAiSuggestion}
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-700/60 text-xs text-slate-400 transition hover:border-slate-500/70 hover:text-slate-200"
+                        aria-label={aiDismissLabel}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    {aiSuggestionLoading ? (
+                      <p className="flex items-center gap-2 text-xs text-slate-400">
+                        <span className="inline-flex h-3 w-3 animate-spin rounded-full border border-slate-600 border-t-amber-300" aria-hidden="true" />
+                        {aiLoadingLabel}
+                      </p>
+                    ) : aiSuggestionError ? (
+                      <div className="space-y-3">
+                        <p className="text-xs text-rose-300">{t('ai.suggest.error', { message: aiSuggestionError.message })}</p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleRequestAiSuggestion}
+                            className="inline-flex items-center gap-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-amber-200 transition hover:border-amber-300/70 hover:bg-amber-500/20"
+                          >
+                            {t('ai.suggest.retry')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleDismissAiSuggestion}
+                            className="inline-flex items-center gap-2 rounded-lg border border-slate-700/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-300 transition hover:border-slate-500/70 hover:text-slate-100"
+                          >
+                            {aiDismissLabel}
+                          </button>
+                        </div>
+                      </div>
+                    ) : aiSuggestion ? (
+                      <div className="space-y-3">
+                        {aiSuggestion.summary ? (
+                          <p className="text-xs text-slate-300">{aiSummaryLabel}: {aiSuggestion.summary}</p>
+                        ) : null}
+                        {aiSuggestion.highlights && aiSuggestion.highlights.length > 0 ? (
+                          <div className="space-y-1">
+                            <span className="text-[0.7rem] font-semibold uppercase tracking-wide text-amber-300">{aiHighlightsLabel}</span>
+                            <ul className="space-y-1 text-xs text-amber-200">
+                              {aiSuggestion.highlights.slice(0, 4).map((item) => (
+                                <li key={item}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                        <div className="rounded-lg border border-slate-700/70 bg-slate-900/60 p-3 text-sm text-slate-100 whitespace-pre-wrap">
+                          {aiSuggestion.message}
+                        </div>
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={handleApplyAiSuggestion}
+                            className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-200 transition hover:border-emerald-300/70 hover:bg-emerald-500/20"
+                          >
+                            {aiApplyLabel}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleDismissAiSuggestion}
+                            className="inline-flex items-center gap-2 rounded-lg border border-slate-700/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-300 transition hover:border-slate-500/70 hover:text-slate-100"
+                          >
+                            {aiDismissLabel}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleRequestAiSuggestion}
+                        className="inline-flex items-center gap-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-amber-200 transition hover:border-amber-300/70 hover:bg-amber-500/20"
+                      >
+                        {t('ai.suggest.generate')}
+                      </button>
+                    )}
+                  </div>
+                ) : null}
+              </div>
             </label>
             <TemplatePicker
               t={t}

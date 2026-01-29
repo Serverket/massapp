@@ -20,6 +20,10 @@ create table if not exists public.contacts (
   phone text,
   email text,
   company text,
+  is_flagged boolean not null default false,
+  flagged_reason text,
+  flagged_at timestamptz,
+  flagged_by uuid,
   last_sent_at timestamptz,
   created_by uuid,
   created_at timestamptz not null default now(),
@@ -43,6 +47,7 @@ drop index if exists public.contacts_email_key;
 create unique index if not exists contacts_phone_key on public.contacts (phone);
 create unique index if not exists contacts_email_key on public.contacts (email);
 create index if not exists contacts_search_vector_idx on public.contacts using gin (search_vector);
+create index if not exists contacts_flagged_idx on public.contacts (is_flagged) where is_flagged;
 
 create table if not exists public.contact_metrics (
   id integer primary key check (id = 1),

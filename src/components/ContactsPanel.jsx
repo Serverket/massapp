@@ -87,7 +87,7 @@ export function ContactsPanel({
     const run = async () => {
       let query = supabase
         .from('contacts')
-        .select('id, full_name, phone, email, company, status, last_sent_at')
+        .select('id, full_name, phone, email, company, status, last_sent_at, is_flagged')
         .order('full_name', { ascending: true })
         .limit(200)
 
@@ -327,7 +327,8 @@ export function ContactsPanel({
                   {(() => {
                     const phoneDigits = extractDigits(contact.phone)
                     const isSelected = phoneDigits && selectedSet.has(phoneDigits)
-                    const isFlagged = phoneDigits && flaggedSet.has(phoneDigits)
+                    const contactFlagged = typeof contact.is_flagged === 'boolean' ? contact.is_flagged : null
+                    const isFlagged = contactFlagged !== null ? contactFlagged : Boolean(phoneDigits && flaggedSet.has(phoneDigits))
                     const interactive = typeof onSelectContact === 'function'
                     return (
                       <button
@@ -364,19 +365,26 @@ export function ContactsPanel({
                           <div className="group/phone flex min-w-0 items-center gap-2">
                             <span className="min-w-0 break-words md:truncate">{contact.phone || '—'}</span>
                             {contact.phone ? (
-                              <button
-                                type="button"
+                              <span
+                                role="button"
+                                tabIndex={0}
                                 onClick={(event) => handleFlagToggle(event, contact)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault()
+                                    handleFlagToggle(event, contact)
+                                  }
+                                }}
                                 aria-pressed={isFlagged}
                                 aria-label={isFlagged ? t('contacts.flag.remove') : t('contacts.flag.add')}
-                                className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[0.7rem] transition ${
+                                className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[0.7rem] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 ${
                                   isFlagged
                                     ? 'border border-amber-300/60 bg-amber-400/10 text-amber-300 opacity-100 shadow-[0_0_6px_rgba(251,191,36,0.25)]'
                                     : 'border border-transparent text-slate-500/0 opacity-0 group-hover/phone:text-slate-400/90 group-hover/phone:opacity-100 hover:text-amber-300 hover:opacity-100'
                                 }`}
                               >
                                 🚩
-                              </button>
+                              </span>
                             ) : null}
                           </div>
                         </div>

@@ -45,6 +45,46 @@ export async function recordContactSends({ contactIds, sendMetricId = null, sent
   return { error }
 }
 
+export async function fetchFlaggedContacts() {
+  if (!isSupabaseReady()) {
+    return { error: new Error('Supabase client is not configured'), data: [] }
+  }
+
+  const { data, error } = await supabase
+    .from('contacts')
+    .select('id, phone, full_name, flagged_reason, flagged_at, flagged_by, is_flagged')
+    .eq('is_flagged', true)
+
+  return { data: data ?? [], error }
+}
+
+export async function setContactFlag({ contactId, flag, reason = null, flaggedAt = null, flaggedBy = null }) {
+  if (!isSupabaseReady()) {
+    return { error: new Error('Supabase client is not configured'), data: null }
+  }
+
+  if (!contactId) {
+    return { error: new Error('Contact id is required'), data: null }
+  }
+
+  const nextFlag = Boolean(flag)
+  const update = {
+    is_flagged: nextFlag,
+    flagged_reason: nextFlag ? reason : null,
+    flagged_at: nextFlag ? flaggedAt ?? new Date().toISOString() : null,
+    flagged_by: nextFlag ? flaggedBy ?? null : null,
+  }
+
+  const { data, error } = await supabase
+    .from('contacts')
+    .update(update)
+    .eq('id', contactId)
+    .select('id, phone, is_flagged, flagged_reason, flagged_at, flagged_by')
+    .single()
+
+  return { data, error }
+}
+
 export async function upsertTemplate({ id, name, body, locale }) {
   if (!isSupabaseReady()) {
     return { error: new Error('Supabase client is not configured') }

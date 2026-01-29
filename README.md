@@ -1,156 +1,119 @@
-# MassApp - WhatsApp campaign launcher
+# MassApp – WhatsApp campaign launcher
 
 ![MassApp cover](public/readme-cover.svg)
 
-[![Version](https://img.shields.io/badge/version-3.4.0-6366f1.svg?style=for-the-badge)](package.json) [![Build Tool](https://img.shields.io/badge/bundler-vite-38bdf8.svg?style=for-the-badge)](vite.config.js) [![License](https://img.shields.io/badge/license-MIT-10b981.svg?style=for-the-badge)](LICENSE)
+[![Version](https://img.shields.io/badge/version-4.0.0-6366f1.svg?style=for-the-badge)](package.json) [![Build Tool](https://img.shields.io-badge/bundler-vite-38bdf8.svg?style=for-the-badge)](vite.config.js) [![License](https://img.shields.io-badge/license-MIT-10b981.svg?style=for-the-badge)](LICENSE)
 
-MassApp is a Vite + React progressive web app that turns recipient lists into ready-to-send WhatsApp chats. Paste or type your numbers, compose the message once, and launch custom WhatsApp campaigns in seconds.
+MassApp is a Vite + React PWA for launching WhatsApp outreach. Paste your list, write the message once, and open chats in bulk.
 
-## 🚀 Features
+## Features
 
-- Recipient parser that normalises raw phone numbers or JIDs and removes duplicates
-- Bulk link builder with a responsive preview grid and clipboard helpers
-- Mode selector that swaps between WhatsApp Web, api.whatsapp.com, and link templates
-- Optional BrowserOS companion workflow to automate send actions after MassApp opens chats
-- Supabase-backed import pipeline with batching, deduplication, and contact health metrics
-- Template manager and contact explorer modals to reuse copy and audit send history
-- Installable Tailwind-powered interface delivered through `vite-plugin-pwa`
+- Cleans phone numbers and builds ready-to-send WhatsApp links.
+- Supports WhatsApp Web, api.whatsapp.com, and template modes.
+- Imports and flags contacts via Supabase with health metrics.
+- Saves reusable message templates and personal details.
+- Offers optional AI suggestions to personalize copy per contact.
 
-## ✅ Prerequisites
+## Requirements
 
-- Node.js 18+ (or Bun 1.1+)
-- A browser where WhatsApp Web is already authenticated and pop-ups are allowed
+- Node.js 18+ (or Bun 1.1+).
+- Browser already logged into WhatsApp Web with pop-ups allowed.
 
-## 🛠️ Getting Started
+## Quick Start
 
 ```bash
-bun install         # or: npm install / pnpm install / yarn install
-bun run dev         # start the Vite dev server on http://localhost:5174
+bun install         # npm / pnpm / yarn also work
+bun run dev         # http://localhost:5174
 ```
 
-To ship a production bundle:
+Build and preview production:
 
 ```bash
 bun run build
-bun run preview     # optional: serve the production build locally
+bun run preview
 ```
 
-## 📋 Usage
+## Launching Campaigns
 
-1. Open the dev server URL (or the static build) in a browser where WhatsApp Web is logged in.
-2. Enter one phone number per line. Numbers can include punctuation; they are cleaned automatically.
-3. Compose the message body you want to send.
-4. Choose the link mode you prefer and click **Open WhatsApp Tabs**.
-5. Approve any pop-up prompts. Each tab loads WhatsApp with the selected number and prefilled message.
+1. Open the app in the browser that has WhatsApp Web active.
+2. Paste one phone number per line; formatting is auto-normalized.
+3. Draft the message body and pick the delivery mode.
+4. Click **Open WhatsApp Tabs** and approve the pop-up batch if prompted.
+5. Use the preview list as a fallback whenever the browser blocks pop-ups.
 
-If your browser blocks the pop-up batch, use the preview list to open or copy links manually.
+## BrowserOS Workflow (Optional)
 
-## 🚀 BrowserOS Workflow = Full Automation (Optional)
+The optional BrowserOS companion keeps MassApp in sync while you handle the WhatsApp tab.
 
-This streamlined workflow automates sending WhatsApp messages to pending contacts through MassApp and marking them as sent. The Bulk Tab Launcher input clears automatically when the contact status updates to SENT, so you never need a manual cleanup step.
+1. Single-click a **Pending** contact to auto-fill the launcher.
+2. Launch the WhatsApp tab, send the message, then close the tab.
+3. Double-click the same contact to mark it **Sent** and expose the next pending row.
+4. If anything stalls, enable pop-ups, verify the Pending filter, and let WhatsApp finish loading before sending.
 
-#### Phase 1: Select Contact
+## Configuration
 
-1. Click once on a contact that shows **Pending** in the MassApp contacts panel.
-2. MassApp highlights the row, drops the phone number into the **Recipients** field, and preloads the message.
+1. Copy the sample environment file:
 
-#### Phase 2: Send in WhatsApp
+   ```bash
+   cp .env.development .env.local
+   ```
 
-3. Click **Open WhatsApp Tabs** to launch WhatsApp Web in a new browser tab with the prefilled conversation.
-4. In WhatsApp Web, press the **Enviar** button so the message sends and clears from the input.
+   | Variable | Description |
+   | --- | --- |
+   | `VITE_SUPABASE_URL` | Supabase project REST endpoint |
+   | `VITE_SUPABASE_ANON_KEY` | Public anonymous key for client SDK calls |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Service role key used only by server utilities |
+   | `SUPABASE_DB_PASSWORD` | Optional helper for local Postgres access |
+   | `VITE_ZAI_API_KEY` | Z AI chat API key (store locally, never commit) |
+   | `VITE_ZAI_CHAT_URL` | Optional override for the chat completion endpoint |
+   | `VITE_ZAI_MODEL` | Optional model alias (default `GLM-4.7-Flash`) |
 
-#### Phase 3: Close WhatsApp & Mark as Sent
+2. Run the SQL in [supabase/schema.sql](supabase/schema.sql) on a fresh Supabase project.
+3. Provision a Supabase Auth user account for MassApp sign-in.
+4. Update icons or manifest assets in `public/` as needed.
 
-5. Close the WhatsApp browser tab to return focus to MassApp.
-6. Double-click the same contact row to flip its status to **Sent**. The Bulk Tab Launcher input clears instantly, the contact moves out of the **Pending** filter, and the next pending contact becomes visible.
+## AI Personalization (Optional)
 
-##### Complete Workflow Summary
+1. Add credentials to `.env.local`:
 
-| Step | Action | Location | Result |
-| --- | --- | --- | --- |
-| 1 | Single-click pending contact | MassApp contacts panel | Contact selected, phone populates Recipients field |
-| 2 | Click **Open WhatsApp Tabs** | MassApp launcher | WhatsApp tab opens with conversation ready |
-| 3 | Click **Enviar** | WhatsApp Web | Message sends with delivery timestamp |
-| 4 | Close WhatsApp tab | Browser tab bar | Focus returns to MassApp |
-| 5 | Double-click contact | MassApp contacts panel | Status updates to Sent, input clears, contact leaves Pending |
+   ```bash
+   echo "VITE_ZAI_API_KEY=your-zai-key-here.your-zai-secret" >> .env.local
+   ```
 
-##### Repeat Cycle
+   Override `VITE_ZAI_CHAT_URL` or `VITE_ZAI_MODEL` if your deployment differs.
 
-- Filtered view shows only pending contacts.
-- Marking a contact as sent removes it from Pending, exposing the next contact.
-- The Bulk Tab Launcher input clears automatically, so the five-step loop restarts immediately.
+2. Restart the dev server so the environment variables load.
+3. Select contacts, prepare a template or custom text, and click the ⚡ button above the composer.
+4. Review the suggestion and Apply to replace the current draft.
 
-##### Key Points
+No AI content is stored unless you accept it.
 
-- Single-click selects; double-click marks as sent.
-- Always close the WhatsApp tab before jumping back to MassApp.
-- Messages stay pre-populated—no retyping required.
-- Automatic filtering and input cleanup keep the workflow continuous.
-
-##### Troubleshooting
-
-- WhatsApp tab blocked? Allow pop-ups in the browser.
-- Contact not selected? Confirm the **Pending** filter is active.
-- Status didn’t change? Double-click with a slight pause between taps.
-- Message stuck? Make sure WhatsApp Web finished loading before sending.
-- List stale? Refresh MassApp and reapply the **Pending** filter.
-- Input didn’t clear? Refresh MassApp to resync the state.
-
-```mermaid
-flowchart TD
-	A[Select pending contact in MassApp] --> B[Launch WhatsApp tab]
-	B --> C[Send message via Enviar]
-	C --> D[Close WhatsApp tab]
-	D --> E[Double-click contact to mark Sent]
-	E --> A
-```
-
-## ⚙️ Configuration
-
-1. Duplicate `.env.development` (and `.env.production` for builds) with your Supabase project credentials:
-
-	```bash
-	cp .env.development .env.local
-	```
-
-	| Variable | Description |
-	| --- | --- |
-	| `VITE_SUPABASE_URL` | Supabase project REST endpoint |
-	| `VITE_SUPABASE_ANON_KEY` | Public anonymous key for client-side calls |
-	| `SUPABASE_SERVICE_ROLE_KEY` | Service role key used by server utilities (keep private) |
-	| `SUPABASE_DB_PASSWORD` | Local tooling helper for connecting to Postgres |
-
-2. Apply the SQL in [supabase/schema.sql](supabase/schema.sql) to a fresh Supabase database (SQL Editor → “Run”).
-3. Create an email/password user for the team inside Supabase Auth to log into the app.
-4. Adjust icons or manifest branding in `public/` if you want a custom theme.
-
-## 🗂️ Project Structure
+## Project Structure
 
 ```
 .
-├── public/            # Static assets served by Vite (icons, manifest)
+├── public/            # Static assets and manifest
 ├── src/
-│   ├── App.jsx        # Tab launcher UI and logic
-│   ├── index.css      # Tailwind base layer and theme overrides
-│   └── main.jsx       # Entry point with PWA registration
-├── index.html         # Vite HTML entry template
+│   ├── App.jsx        # Launcher UI and core logic
+│   ├── components/    # UI building blocks
+│   ├── lib/           # Supabase + AI helpers
+│   └── main.jsx       # App entry point
 ├── package.json       # Scripts and dependencies
 ├── tailwind.config.js # Tailwind configuration
-├── vite.config.js     # Vite + PWA configuration
-└── eslint.config.js   # Flat ESLint config
+├── vite.config.js     # Vite + PWA setup
+└── supabase/          # Database schema
 ```
 
-## 🚧 Limitations
+## Limitations
 
-- WhatsApp enforces rate limits and manual confirmation; unattended delivery is not supported.
-- Browsers may block programmatic pop-ups. Allow pop-ups for the site or use the manual preview links.
-- No scheduling or delivery telemetry is available—MassApp intentionally keeps the scope simple.
+- WhatsApp still requires manual confirmation; unattended sending is unsupported.
+- Browsers may block pop-ups; open links from the preview list when that happens.
+- Scheduling and delivery analytics are out of scope to keep the tool lightweight.
 
-## 📄 License
+## License
 
-Released under the [MIT License](LICENSE). See the license file for exact wording.
+Released under the [MIT License](LICENSE).
 
 ## 🧠 Acknowledgments
 
 "Whoever loves discipline loves knowledge, but whoever hates correction is stupid."
-
