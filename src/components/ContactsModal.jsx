@@ -36,7 +36,7 @@ async function fetchContacts({ statusFilter, search, showAll }) {
   while (true) {
     let query = supabase
       .from('contacts')
-      .select('id, full_name, phone, email, company, status, last_sent_at', { count: 'exact' })
+      .select('id, full_name, phone, email, company, status, last_sent_at, is_flagged', { count: 'exact' })
       .order('full_name', { ascending: true })
       .range(from, to)
 
@@ -385,7 +385,8 @@ export function ContactsModal({
                   (() => {
                     const phoneDigits = extractDigits(contact.phone)
                     const isSelected = phoneDigits && selectedSet.has(phoneDigits)
-                    const isFlagged = phoneDigits && flaggedSet.has(phoneDigits)
+                    const contactFlagged = typeof contact.is_flagged === 'boolean' ? contact.is_flagged : null
+                    const isFlagged = contactFlagged !== null ? contactFlagged : Boolean(phoneDigits && flaggedSet.has(phoneDigits))
                     const rowClass = isSelected
                       ? 'bg-blue-500/10 ring-1 ring-inset ring-blue-400/50'
                       : 'bg-slate-900/60 hover:bg-slate-800/60'
@@ -417,19 +418,26 @@ export function ContactsModal({
                           <div className="group/phone flex items-center gap-2">
                             <span className="break-words">{contact.phone || '—'}</span>
                             {contact.phone ? (
-                              <button
-                                type="button"
+                              <span
+                                role="button"
+                                tabIndex={0}
                                 onClick={(event) => handleFlagToggle(event, contact)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault()
+                                    handleFlagToggle(event, contact)
+                                  }
+                                }}
                                 aria-pressed={isFlagged}
                                 aria-label={isFlagged ? t('contacts.flag.remove') : t('contacts.flag.add')}
-                                className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[0.7rem] transition ${
+                                className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[0.7rem] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 ${
                                   isFlagged
                                     ? 'border border-amber-300/60 bg-amber-400/10 text-amber-300 opacity-100 shadow-[0_0_6px_rgba(251,191,36,0.25)]'
                                     : 'border border-transparent text-slate-500/0 opacity-0 group-hover/phone:text-slate-400/90 group-hover/phone:opacity-100 hover:text-amber-300 hover:opacity-100'
                                 }`}
                               >
                                 🚩
-                              </button>
+                              </span>
                             ) : null}
                           </div>
                         </td>
