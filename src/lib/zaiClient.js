@@ -57,11 +57,15 @@ async function createHmacSha256(keyBytes, messageBytes) {
   }
 
   try {
-    const { createHmac } = await import('crypto')
-    const hmac = createHmac('sha256', Buffer.from(keyBytes))
-    hmac.update(Buffer.from(messageBytes))
-    return hmac.digest().buffer
-  } catch (error) {
+    const [{ createHmac }, { Buffer: NodeBuffer }] = await Promise.all([
+      import('node:crypto'),
+      import('node:buffer'),
+    ])
+    const hmac = createHmac('sha256', NodeBuffer.from(keyBytes))
+    hmac.update(NodeBuffer.from(messageBytes))
+    const digest = hmac.digest()
+    return digest.buffer.slice(digest.byteOffset, digest.byteOffset + digest.byteLength)
+  } catch {
     throw new Error('Unable to access crypto.subtle or Node crypto for Z AI token generation')
   }
 }

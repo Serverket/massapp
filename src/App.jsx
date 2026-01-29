@@ -214,7 +214,6 @@ const PLACEHOLDER_NAME_KEYWORDS = [
   'unknown',
   'desconocido',
   'desconocida',
-  'sin nombre',
   'placeholder',
   'test',
   'prueba',
@@ -230,38 +229,275 @@ const PLACEHOLDER_NAME_KEYWORDS = [
   'empresa',
   'team',
   'equipo',
+  'realtor',
+  'agent',
+  'agente',
+  'asesor',
+  'asesora',
+  'asesoria',
+  'broker',
+  'buyer',
+  'seller',
+  'tenant',
+  'landlord',
+  'propietario',
+  'propietaria',
+  'arrendador',
+  'arrendadora',
+  'arrendatario',
+  'arrendataria',
+  'comprador',
+  'compradora',
+  'vendedor',
+  'vendedora',
+  'prospect',
+  'prospecto',
+  'vip',
+  'sr',
+  'sr.',
+  'sra',
+  'sra.',
+  'srta',
+  'srta.',
+  'don',
+  'doña',
+  'dr',
+  'dr.',
+  'dra',
+  'dra.',
+  'mr',
+  'mr.',
+  'mrs',
+  'mrs.',
+  'ms',
+  'ms.',
+  'ing',
+  'ing.',
+  'lic',
+  'lic.',
+  'arq',
+  'arq.',
+  'prof',
+  'prof.',
+  'coach',
+  'mentor',
 ]
 
-function isLikelyPlaceholderName(rawName) {
+const PLACEHOLDER_NAME_PHRASES = [
+  'sin nombre',
+  'no name',
+  'without name',
+  'no tiene nombre',
+  'sin info',
+  'sin información',
+  'no especificado',
+  'not provided',
+]
+
+const NAME_SEQUENCE_REGEX = /[A-Za-zÁÉÍÓÚÑÜ][A-Za-zÁÉÍÓÚÑÜ'`´’-]{1,}(?:\s+[A-Za-zÁÉÍÓÚÑÜ][A-Za-zÁÉÍÓÚÑÜ'`´’-]{1,})*/g
+const NAME_TOKEN_STRIP_PATTERN = /[.'`´’_-]/g
+
+function normalizeNameToken(token) {
+  if (!token) {
+    return ''
+  }
+  return token
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(NAME_TOKEN_STRIP_PATTERN, '')
+}
+
+function normalizeNamePhrase(value) {
+  return value
+    .split(/\s+/)
+    .map((part) => normalizeNameToken(part))
+    .filter(Boolean)
+    .join(' ')
+}
+
+const PLACEHOLDER_NAME_LOOKUP = new Set(PLACEHOLDER_NAME_KEYWORDS.map((keyword) => normalizeNameToken(keyword)))
+const PLACEHOLDER_NAME_PHRASES_NORMALIZED = PLACEHOLDER_NAME_PHRASES.map((phrase) => normalizeNamePhrase(phrase))
+
+function cleanupNameTokens(tokens) {
+  if (!Array.isArray(tokens) || tokens.length === 0) {
+    return []
+  }
+
+  const cleaned = tokens.filter((token) => {
+    const normalized = normalizeNameToken(token)
+    if (!normalized) {
+      return false
+    }
+    if (/^\d+$/.test(normalized)) {
+      return false
+    }
+    return !PLACEHOLDER_NAME_LOOKUP.has(normalized)
+  })
+
+  if (cleaned.length > 0) {
+    return cleaned
+  }
+
+  const letterTokens = tokens.filter((token) => /[A-Za-zÁÉÍÓÚÑÜáéíóúñü]/.test(token))
+  if (letterTokens.length > 0) {
+    return letterTokens
+  }
+
+  return tokens.filter(Boolean)
+}
+
+function buildNamePartsFromTokens(tokens) {
+  const sequence = tokens.filter(Boolean)
+  if (sequence.length === 0) {
+    return {
+      fullName: null,
+      firstName: null,
+      lastName: null,
+    }
+  }
+
+  const fullName = sequence.join(' ')
+  return {
+    fullName,
+    firstName: sequence[0] ?? null,
+    lastName: sequence.length > 1 ? sequence.slice(1).join(' ') : null,
+  }
+}
+
+function deriveContactNameParts(rawName, fallbackName) {
+  const trimmed = typeof rawName === 'string' ? rawName.trim() : ''
+  const candidate = extractPersonalName(trimmed)
+  const baseSource = candidate || trimmed
+  let baseTokens = baseSource.split(/\s+/).filter(Boolean)
+  baseTokens = cleanupNameTokens(baseTokens)
+
+  if (baseTokens.length === 0 && trimmed && trimmed !== baseSource) {
+    baseTokens = cleanupNameTokens(trimmed.split(/\s+/).filter(Boolean))
+  }
+
+  if (baseTokens.length === 0 && trimmed) {
+    const segments = trimmed
+      .split(/\s*[-–—/|,;:]+\s*/)
+      .map((segment) => segment.trim())
+      .filter(Boolean)
+
+    for (let index = segments.length - 1; index >= 0; index -= 1) {
+      const segmentTokens = cleanupNameTokens(segments[index].split(/\s+/).filter(Boolean))
+      if (segmentTokens.length > 0) {
+        return buildNamePartsFromTokens(segmentTokens)
+      }
+    }
+  }
+
+  if (baseTokens.length > 0) {
+    return buildNamePartsFromTokens(baseTokens)
+  }
+
+  if (fallbackName) {
+    const fallbackTokens = fallbackName.split(/\s+/).filter(Boolean)
+    if (fallbackTokens.length > 0) {
+      return buildNamePartsFromTokens(fallbackTokens)
+    }
+    return buildNamePartsFromTokens([fallbackName])
+  }
+
+  return {
+    fullName: null,
+    firstName: null,
+    lastName: null,
+  }
+}
+
+function extractPersonalName(rawName) {
   if (!rawName || typeof rawName !== 'string') {
-    return true
+    return null
   }
 
-  const normalized = rawName.trim()
-  if (normalized.length < 2) {
-    return true
+  let bestCandidate = null
+  let bestScore = -Infinity
+  let bestNonPlaceholderCount = -1
+  let bestWordCount = -1
+  let bestCapitalizedCount = -1
+  let bestLength = -1
+  let bestIndex = -1
+
+  for (const match of rawName.matchAll(NAME_SEQUENCE_REGEX)) {
+    const candidate = match[0]?.trim()
+    if (!candidate || candidate.length < 2) {
+      continue
+    }
+
+    const tokens = candidate.split(/\s+/).filter(Boolean)
+    if (tokens.length === 0) {
+      continue
+    }
+
+    const normalizedTokens = tokens.map((token) => normalizeNameToken(token))
+    const nonPlaceholderTokens = normalizedTokens.filter((token) => token && !PLACEHOLDER_NAME_LOOKUP.has(token))
+
+    if (nonPlaceholderTokens.length === 0) {
+      continue
+    }
+
+    const normalizedPhrase = normalizedTokens.filter(Boolean).join(' ')
+    if (PLACEHOLDER_NAME_PHRASES_NORMALIZED.some((placeholder) => normalizedPhrase.includes(placeholder))) {
+      continue
+    }
+
+    const hasDigit = /\d/.test(candidate)
+    const wordCount = tokens.length
+    const capitalizedCount = tokens.filter((token) => /^[A-ZÁÉÍÓÚÑÜ][a-záéíóúñü'`´’-]+$/.test(token)).length
+    const allUppercase = tokens.every((token) => token.length > 1 && token === token.toUpperCase())
+    const referenceTokens = nonPlaceholderTokens.length > 0 ? nonPlaceholderTokens : normalizedTokens.filter(Boolean)
+    const uniqueTokenCount = new Set(referenceTokens).size
+
+    let score = wordCount * 2
+    score += nonPlaceholderTokens.length
+    if (!hasDigit) {
+      score += 1
+    }
+    if (capitalizedCount > 0) {
+      score += capitalizedCount
+    }
+    if (!allUppercase) {
+      score += 0.5
+    }
+    score += uniqueTokenCount * 0.25
+
+    const candidateLength = candidate.length
+    const candidateIndex = typeof match.index === 'number' ? match.index : rawName.indexOf(candidate)
+
+    const isBetter =
+      score > bestScore ||
+      (score === bestScore &&
+        (nonPlaceholderTokens.length > bestNonPlaceholderCount ||
+          (nonPlaceholderTokens.length === bestNonPlaceholderCount && wordCount > bestWordCount) ||
+          (nonPlaceholderTokens.length === bestNonPlaceholderCount &&
+            wordCount === bestWordCount &&
+            capitalizedCount > bestCapitalizedCount) ||
+          (nonPlaceholderTokens.length === bestNonPlaceholderCount &&
+            wordCount === bestWordCount &&
+            capitalizedCount === bestCapitalizedCount &&
+            candidateLength > bestLength) ||
+          (nonPlaceholderTokens.length === bestNonPlaceholderCount &&
+            wordCount === bestWordCount &&
+            capitalizedCount === bestCapitalizedCount &&
+            candidateLength === bestLength &&
+            candidateIndex > bestIndex)))
+
+    if (isBetter) {
+      bestScore = score
+      bestCandidate = candidate.replace(/\s+/g, ' ')
+      bestNonPlaceholderCount = nonPlaceholderTokens.length
+      bestWordCount = wordCount
+      bestCapitalizedCount = capitalizedCount
+      bestLength = candidateLength
+      bestIndex = candidateIndex
+    }
   }
 
-  if (!/[a-záéíóúñü]/i.test(normalized)) {
-    return true
-  }
-
-  if (/\d/.test(normalized)) {
-    return true
-  }
-
-  if (/[{}\[\]_]/.test(normalized)) {
-    return true
-  }
-
-  const lower = normalized.toLowerCase()
-  if (PLACEHOLDER_NAME_KEYWORDS.some((keyword) => lower.includes(keyword))) {
-    return true
-  }
-
-  const words = normalized.split(/\s+/)
-  const hasValidWord = words.some((word) => /^[a-záéíóúñü'\-]{2,}$/i.test(word))
-  return !hasValidWord
+  return bestCandidate ?? null
 }
 
 function resolveFallbackContactName(languageHint, locale = 'en') {
@@ -685,7 +921,7 @@ function App() {
 
       return resolved
     },
-    [contactIdMap, supabase],
+    [contactIdMap],
   )
   const handleRequestAiSuggestion = useCallback(async () => {
     if (!isSupabaseReady()) {
@@ -777,14 +1013,7 @@ function App() {
             return null
           }
           const rawFullName = (base.full_name ?? '').trim()
-          const fullName = isLikelyPlaceholderName(rawFullName) ? fallbackContactName : rawFullName
-          let firstName = null
-          let lastName = null
-          if (fullName) {
-            const parts = fullName.split(/\s+/)
-            firstName = parts[0] ?? null
-            lastName = parts.length > 1 ? parts.slice(1).join(' ') : null
-          }
+          const { fullName, firstName, lastName } = deriveContactNameParts(rawFullName, fallbackContactName)
           return {
             ...base,
             digits,
@@ -805,7 +1034,11 @@ function App() {
 
       const { data, error, warning } = await suggestTemplatePersonalization({
         templateBody: messageBody,
-        contacts: contactsForAi.map(({ digits: _digits, ...rest }) => rest),
+        contacts: contactsForAi.map((contact) => {
+          const clone = { ...contact }
+          delete clone.digits
+          return clone
+        }),
         languageHint,
       })
 
@@ -825,7 +1058,7 @@ function App() {
     } finally {
       setAiSuggestionLoading(false)
     }
-  }, [aiConfigured, locale, messageBody, preparedRecipients, resolveContactIds, supabase, t])
+  }, [aiConfigured, locale, messageBody, preparedRecipients, resolveContactIds, t])
 
   const handleApplyAiSuggestion = useCallback(() => {
     if (!aiSuggestion?.message) {
