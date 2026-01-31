@@ -2,7 +2,7 @@
 
 ![MassApp cover](public/readme-cover.svg)
 
-[![Version](https://img.shields.io/badge/version-4.0.0-6366f1.svg?style=for-the-badge)](package.json) [![Build Tool](https://img.shields.io/badge/build%20tool-Vite-646cff.svg?style=for-the-badge&logo=vite&logoColor=white)](vite.config.js) [![License](https://img.shields.io/badge/license-MIT-0ea5e9.svg?style=for-the-badge)](LICENSE)
+[![Version](https://img.shields.io/badge/version-4.2.0-6366f1.svg?style=for-the-badge)](package.json) [![Build Tool](https://img.shields.io/badge/build%20tool-Vite-646cff.svg?style=for-the-badge&logo=vite&logoColor=white)](vite.config.js) [![License](https://img.shields.io/badge/license-MIT-0ea5e9.svg?style=for-the-badge)](LICENSE)
 
 MassApp is a Vite + React PWA for launching WhatsApp outreach. Paste your list, write the message once, and open chats in bulk.
 

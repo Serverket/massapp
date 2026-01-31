@@ -134,3 +134,48 @@ export async function toggleContactDeliveryStatus({ contactId, currentStatus }) 
 
   return { data, error }
 }
+
+export async function updateContact(contactId, updates = {}) {
+  if (!isSupabaseReady()) {
+    return { error: new Error('Supabase client is not configured'), data: null }
+  }
+
+  if (!contactId) {
+    return { error: new Error('Contact id is required'), data: null }
+  }
+
+  const allowedFields = ['full_name', 'phone', 'email', 'company']
+  const payload = {}
+
+  allowedFields.forEach((field) => {
+    if (Object.prototype.hasOwnProperty.call(updates, field)) {
+      payload[field] = updates[field]
+    }
+  })
+
+  if (Object.keys(payload).length === 0) {
+    return { error: null, data: null }
+  }
+
+  const { data, error } = await supabase
+    .from('contacts')
+    .update(payload)
+    .eq('id', contactId)
+    .select('id, full_name, phone, email, company, status, last_sent_at, is_flagged')
+    .single()
+
+  return { data, error }
+}
+
+export async function deleteContact(contactId) {
+  if (!isSupabaseReady()) {
+    return { error: new Error('Supabase client is not configured') }
+  }
+
+  if (!contactId) {
+    return { error: new Error('Contact id is required') }
+  }
+
+  const { error } = await supabase.from('contacts').delete().eq('id', contactId)
+  return { error }
+}
