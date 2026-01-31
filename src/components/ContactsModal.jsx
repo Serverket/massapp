@@ -1,4 +1,5 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Papa from 'papaparse'
 import { supabase, isSupabaseReady } from '../lib/supabaseClient.js'
 import { toggleContactDeliveryStatus } from '../lib/storage.js'
 
@@ -96,6 +97,8 @@ export function ContactsModal({
   const [showAll, setShowAll] = useState(false)
   const [state, setState] = useState({ data: [], loading: false, error: null, total: null })
   const [localRefreshVersion, setLocalRefreshVersion] = useState(0)
+  const [exporting, setExporting] = useState(false)
+  const [exportStatus, setExportStatus] = useState(null)
   const debouncedSearch = useDebouncedValue(search, 300)
   const clickTimeoutRef = useRef(null)
   const togglingIdsRef = useRef(new Set())
@@ -139,6 +142,7 @@ export function ContactsModal({
     let isCancelled = false
     startTransition(() => {
       setState((prev) => ({ ...prev, loading: true, error: null }))
+      setExportStatus(null)
     })
 
     const run = async () => {
@@ -170,6 +174,7 @@ export function ContactsModal({
         setSearch('')
         setStatusFilter('all')
         setShowAll(false)
+        setExportStatus(null)
       })
     }
   }, [open])
@@ -290,6 +295,70 @@ export function ContactsModal({
     },
     [onFlagToggle],
   )
+
+  const handleExport = useCallback(async () => {
+    if (!isSupabaseReady() || exporting) {
+      return
+    }
+
+    setExportStatus(null)
+    setExporting(true)
+
+    try {
+      const result = await fetchContacts({ statusFilter, search: debouncedSearch, showAll: true })
+      if (result.error) {
+        throw result.error
+      }
+
+      const rows = result.data ?? []
+
+      if (rows.length === 0) {
+        setExportStatus({ type: 'info', message: t('contacts.modal.export.empty') })
+        return
+      }
+
+      const headers = [
+        t('contacts.columns.name'),
+        t('contacts.columns.company'),
+        t('contacts.columns.email'),
+        t('contacts.columns.phone'),
+        t('contacts.columns.status'),
+        t('contacts.modal.lastSent'),
+      ]
+
+      const dataRows = rows.map((contact) => [
+        contact.full_name ?? '',
+        contact.company ?? '',
+        contact.email ?? '',
+        contact.phone ?? '',
+        contact.status === 'green' ? t('contacts.statusLabels.green') : t('contacts.statusLabels.red'),
+        contact.last_sent_at ? new Date(contact.last_sent_at).toISOString() : '',
+      ])
+
+      const csv = Papa.unparse({ fields: headers, data: dataRows })
+      const blob = new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `massapp-contacts-${timestamp}.csv`
+      document.body.append(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+
+      setExportStatus({ type: 'success', message: t('contacts.modal.export.success', { count: rows.length }) })
+    } catch (error) {
+      const message = error && typeof error === 'object' && typeof error.message === 'string' && error.message.trim().length > 0
+        ? error.message.trim()
+        : typeof error === 'string'
+          ? error
+          : t('contacts.modal.export.unknownError')
+      setExportStatus({ type: 'error', message: t('contacts.modal.export.error', { message }) })
+    } finally {
+      setExporting(false)
+    }
+  }, [debouncedSearch, exporting, statusFilter, t])
   useEffect(() => {
     const wasOpen = wasOpenRef.current
     wasOpenRef.current = open
@@ -341,26 +410,49 @@ export function ContactsModal({
                 {t(filter.label)}
               </button>
             ))}
-            <button
+              <button
               type="button"
               onClick={() => setShowAll((value) => !value)}
               className="inline-flex items-center gap-2 rounded-lg border border-slate-700/60 px-3 py-1.5 text-[0.7rem] font-semibold uppercase tracking-wide text-slate-300 transition hover:border-slate-500/70 hover:text-slate-100"
             >
-              <span className={`h-2 w-2 rounded-full ${showAll ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                <span className={`h-2 w-2 rounded-full ${showAll ? 'bg-slate-500' : 'bg-emerald-400'}`} />
               {showAll ? t('contacts.modal.showLimited') : t('contacts.modal.showAll')}
             </button>
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">{summaryLabel}</span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex items-center justify-center rounded-lg border border-slate-700/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-300 transition hover:border-slate-500/70 hover:text-slate-100"
-          >
-            {t('contacts.modal.close')}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={exporting || state.loading || !isSupabaseReady()}
+              className="inline-flex items-center justify-center rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-200 transition hover:border-emerald-300/70 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {exporting ? t('contacts.modal.exporting') : t('contacts.modal.export')}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center justify-center rounded-lg border border-slate-700/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-300 transition hover:border-slate-500/70 hover:text-slate-100"
+            >
+              {t('contacts.modal.close')}
+            </button>
+          </div>
         </div>
+        {exportStatus ? (
+          <p
+            className={`text-xs ${
+              exportStatus.type === 'error'
+                ? 'text-rose-300'
+                : exportStatus.type === 'success'
+                  ? 'text-emerald-300'
+                  : 'text-slate-300'
+            }`}
+          >
+            {exportStatus.message}
+          </p>
+        ) : null}
         <div className="max-h-[65vh] overflow-x-auto overflow-y-auto rounded-xl border border-slate-700/40">
           {state.loading ? (
             <div className="px-4 py-6 text-sm text-slate-400">{t('contacts.loading')}</div>
@@ -386,7 +478,7 @@ export function ContactsModal({
                     const phoneDigits = extractDigits(contact.phone)
                     const isSelected = phoneDigits && selectedSet.has(phoneDigits)
                     const contactFlagged = typeof contact.is_flagged === 'boolean' ? contact.is_flagged : null
-                    const isFlagged = contactFlagged !== null ? contactFlagged : Boolean(phoneDigits && flaggedSet.has(phoneDigits))
+                    const isFlagged = Boolean(contactFlagged) || (phoneDigits && flaggedSet.has(phoneDigits))
                     const rowClass = isSelected
                       ? 'bg-blue-500/10 ring-1 ring-inset ring-blue-400/50'
                       : 'bg-slate-900/60 hover:bg-slate-800/60'

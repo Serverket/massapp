@@ -328,7 +328,7 @@ export function ContactsPanel({
                     const phoneDigits = extractDigits(contact.phone)
                     const isSelected = phoneDigits && selectedSet.has(phoneDigits)
                     const contactFlagged = typeof contact.is_flagged === 'boolean' ? contact.is_flagged : null
-                    const isFlagged = contactFlagged !== null ? contactFlagged : Boolean(phoneDigits && flaggedSet.has(phoneDigits))
+                    const isFlagged = Boolean(contactFlagged) || (phoneDigits && flaggedSet.has(phoneDigits))
                     const interactive = typeof onSelectContact === 'function'
                     return (
                       <button
