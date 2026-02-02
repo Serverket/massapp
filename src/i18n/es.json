@@ -60,6 +60,7 @@
   "contacts.filters.all": "Todos",
   "contacts.filters.green": "Enviados",
   "contacts.filters.red": "Pendientes",
+  "contacts.sort.tooltip": "Aplicar filtro asc/des",
   "contacts.columns.name": "Nombre",
   "contacts.columns.company": "Empresa",
   "contacts.columns.email": "Correo",

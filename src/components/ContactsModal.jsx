@@ -133,6 +133,7 @@ export function ContactsModal({
   const [editingStatus, setEditingStatus] = useState(null)
   const [editingSaving, setEditingSaving] = useState(false)
   const [deleteContactTarget, setDeleteContactTarget] = useState(null)
+  const [dateSortDirection, setDateSortDirection] = useState('desc')
   const selectedSet = useMemo(() => {
     return new Set(
       (selectedPhones ?? [])
@@ -148,12 +149,40 @@ export function ContactsModal({
     )
   }, [flaggedPhones])
 
+  const sortedData = useMemo(() => {
+    const contacts = state.data ?? []
+    const parseTimestamp = (value) => {
+      if (!value) {
+        return null
+      }
+      const parsed = Date.parse(value)
+      return Number.isFinite(parsed) ? parsed : null
+    }
+
+    return [...contacts].sort((a, b) => {
+      const aTime = parseTimestamp(a.last_sent_at)
+      const bTime = parseTimestamp(b.last_sent_at)
+
+      if (aTime === bTime) {
+        return 0
+      }
+
+      if (aTime === null) {
+        return 1
+      }
+      if (bTime === null) {
+        return -1
+      }
+      return dateSortDirection === 'asc' ? aTime - bTime : bTime - aTime
+    })
+  }, [dateSortDirection, state.data])
+
   const activeMenuContact = useMemo(() => {
     if (!menuContactId) {
       return null
     }
-    return state.data.find((item) => item.id === menuContactId) ?? null
-  }, [menuContactId, state.data])
+    return sortedData.find((item) => item.id === menuContactId) ?? null
+  }, [menuContactId, sortedData])
 
   useEffect(() => {
     if (!menuContactId) {
@@ -247,7 +276,7 @@ export function ContactsModal({
     }
   }, [open])
 
-  const visibleCount = state.data.length
+  const visibleCount = sortedData.length
   const effectiveTotal = typeof state.total === 'number' ? state.total : totalContacts ?? visibleCount
 
   const summaryLabel = useMemo(() => {
@@ -262,6 +291,10 @@ export function ContactsModal({
     }
     return t('contacts.modal.summary', { count: visibleCount, total: effectiveTotal })
   }, [effectiveTotal, state.error, state.loading, t, visibleCount])
+
+  const toggleDateSortDirection = useCallback(() => {
+    setDateSortDirection((previous) => (previous === 'asc' ? 'desc' : 'asc'))
+  }, [])
 
   const interactive = typeof onSelectContact === 'function'
   const scheduleContactSelection = useCallback(
@@ -735,7 +768,7 @@ export function ContactsModal({
             <div className="px-4 py-6 text-sm text-slate-400">{t('contacts.loading')}</div>
           ) : state.error ? (
             <div className="px-4 py-6 text-sm text-rose-300">{t('contacts.modal.error', { message: state.error.message })}</div>
-          ) : state.data.length === 0 ? (
+          ) : sortedData.length === 0 ? (
             <div className="px-4 py-6 text-sm text-slate-400">{t('contacts.modal.empty')}</div>
           ) : (
             <table className="min-w-full table-fixed divide-y divide-slate-800/60 text-left text-sm text-slate-100">
@@ -746,11 +779,21 @@ export function ContactsModal({
                   <th className="px-4 py-2 font-semibold">{t('contacts.columns.email')}</th>
                   <th className="px-4 py-2 font-semibold">{t('contacts.columns.phone')}</th>
                   <th className="px-4 py-2 font-semibold">{t('contacts.columns.status')}</th>
-                  <th className="px-4 py-2 font-semibold text-right">{t('contacts.modal.lastSent')}</th>
+                  <th className="px-4 py-2 font-semibold text-right">
+                    <button
+                      type="button"
+                      onClick={toggleDateSortDirection}
+                      className="inline-flex items-center justify-end gap-1 rounded-md px-2 py-1 text-xs font-semibold uppercase tracking-wide text-right text-slate-300 transition hover:text-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
+                      title={t('contacts.sort.tooltip')}
+                    >
+                      <span>{t('contacts.modal.lastSent')}</span>
+                      <span aria-hidden="true">{dateSortDirection === 'asc' ? '↑' : '↓'}</span>
+                    </button>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/50">
-                {state.data.map((contact) => {
+                {sortedData.map((contact) => {
                   const phoneDigits = extractDigits(contact.phone)
                   const isSelected = phoneDigits && selectedSet.has(phoneDigits)
                   const contactFlagged = typeof contact.is_flagged === 'boolean' ? contact.is_flagged : null
@@ -759,6 +802,7 @@ export function ContactsModal({
                     ? 'bg-blue-500/10 ring-1 ring-inset ring-blue-400/50'
                     : 'bg-slate-900/60 hover:bg-slate-800/60'
                   const isEditing = editingContact?.id === contact.id
+                  const lastSentDisplay = contact.last_sent_at ? new Date(contact.last_sent_at).toLocaleString() : '—'
 
                   if (isEditing) {
                     return (
@@ -766,7 +810,7 @@ export function ContactsModal({
                         <td colSpan={6} className="px-0 py-0">
                           <form
                             onSubmit={handleEditSubmit}
-                            className="grid gap-3 rounded-lg border border-sky-500/60 bg-slate-900/70 px-4 py-4 text-sm text-slate-100 md:grid-cols-[1.15fr_1fr_1fr_0.9fr_0.6fr]"
+                            className="grid gap-3 rounded-lg border border-sky-500/60 bg-slate-900/70 px-4 py-4 text-sm text-slate-100 md:grid-cols-[1.15fr_1fr_1fr_0.9fr_0.9fr_0.6fr]"
                           >
                             <label className="flex min-w-0 flex-col gap-1 md:truncate">
                               <span className="text-xs font-semibold uppercase text-slate-400">{t('contacts.columns.name')}</span>
@@ -809,6 +853,12 @@ export function ContactsModal({
                                 maxLength={64}
                               />
                             </label>
+                            <span className="flex min-w-0 flex-col gap-1 md:items-end">
+                              <span className="text-xs font-semibold uppercase text-slate-400">{t('contacts.modal.lastSent')}</span>
+                              <span className="text-xs text-slate-300">
+                                {editingContact?.last_sent_at ? new Date(editingContact.last_sent_at).toLocaleString() : '—'}
+                              </span>
+                            </span>
                             <span className="flex flex-col gap-1">
                               <span className="text-xs font-semibold uppercase text-slate-400">{t('contacts.columns.status')}</span>
                               <span className="inline-flex items-center gap-2">
@@ -818,7 +868,7 @@ export function ContactsModal({
                                 </span>
                               </span>
                             </span>
-                            <div className="md:col-span-5 flex flex-wrap items-center justify-between gap-3 pt-2">
+                            <div className="md:col-span-6 flex flex-wrap items-center justify-between gap-3 pt-2">
                               {editingStatus ? (
                                 <span
                                   className={`text-xs ${
@@ -964,8 +1014,8 @@ export function ContactsModal({
                           </span>
                         </span>
                       </td>
-                      <td className="px-4 py-2 text-right text-slate-300">
-                        {contact.last_sent_at ? new Date(contact.last_sent_at).toLocaleString() : '—'}
+                      <td className="px-4 py-2 text-right text-slate-300" title={lastSentDisplay === '—' ? undefined : lastSentDisplay}>
+                        {lastSentDisplay}
                       </td>
                     </tr>
                   )

@@ -92,12 +92,14 @@ export function ContactsPanel({
     )
   }, [flaggedPhones])
 
+  const sortedData = useMemo(() => state.data ?? [], [state.data])
+
   const activeMenuContact = useMemo(() => {
     if (!menuContactId) {
       return null
     }
-    return state.data.find((item) => item.id === menuContactId) ?? null
-  }, [menuContactId, state.data])
+    return sortedData.find((item) => item.id === menuContactId) ?? null
+  }, [menuContactId, sortedData])
 
   useEffect(() => {
     if (!menuContactId) {
@@ -490,7 +492,7 @@ export function ContactsPanel({
     [onFlagToggle],
   )
 
-  const { data, loading, error } = state
+  const { loading, error } = state
 
   const statusSummary = useMemo(() => {
     if (loading) {
@@ -499,7 +501,7 @@ export function ContactsPanel({
     if (error) {
       return t('contacts.status.error')
     }
-    const visibleCount = data.length
+    const visibleCount = sortedData.length
     const hasTotal = typeof totalContacts === 'number'
 
     if (visibleCount === 0) {
@@ -514,7 +516,7 @@ export function ContactsPanel({
     }
 
     return t('contacts.status.count', { count: visibleCount })
-  }, [data.length, error, loading, t, totalContacts])
+  }, [error, loading, sortedData.length, t, totalContacts])
 
   return (
     <>
@@ -537,7 +539,7 @@ export function ContactsPanel({
         </div>
       </header>
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <div className="flex items-center w-full gap-2 px-3 border rounded-xl border-slate-700/60 bg-slate-900/60">
           <svg
             aria-hidden="true"
@@ -578,23 +580,23 @@ export function ContactsPanel({
       </div>
 
       <div className="flex flex-col flex-1 min-h-0 overflow-hidden border rounded-xl border-slate-700/40">
-        <div className="hidden bg-slate-800/60 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-300 md:grid md:grid-cols-[1.15fr_1fr_1fr_0.9fr_0.6fr]">
-          <span>{t('contacts.columns.name')}</span>
-          <span>{t('contacts.columns.company')}</span>
-          <span>{t('contacts.columns.email')}</span>
-          <span>{t('contacts.columns.phone')}</span>
-          <span>{t('contacts.columns.status')}</span>
+        <div className="hidden bg-slate-800/60 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-300 md:grid md:grid-cols-[1.15fr_1fr_1fr_0.9fr_0.6fr]">
+          <span className="text-left">{t('contacts.columns.name')}</span>
+          <span className="text-left">{t('contacts.columns.company')}</span>
+          <span className="text-left">{t('contacts.columns.email')}</span>
+          <span className="text-left">{t('contacts.columns.phone')}</span>
+          <span className="text-left">{t('contacts.columns.status')}</span>
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto pt-3 pb-2 max-h-[28rem] md:max-h-[32rem] md:py-0">
           {state.loading ? (
             <div className="px-4 py-6 text-sm text-slate-400">{t('contacts.loading')}</div>
           ) : state.error ? (
             <div className="px-4 py-6 text-sm text-rose-300">{t('contacts.error', { message: state.error.message })}</div>
-          ) : state.data.length === 0 ? (
+          ) : sortedData.length === 0 ? (
             <div className="px-4 py-6 text-sm text-slate-400">{t('contacts.empty')}</div>
           ) : (
             <ul className="divide-y divide-slate-800/60">
-              {state.data.map((contact) => (
+              {sortedData.map((contact) => (
                 <li key={contact.id} className="px-1 py-1">
                   {(() => {
                     const phoneDigits = extractDigits(contact.phone)

@@ -60,6 +60,7 @@
   "contacts.filters.all": "All",
   "contacts.filters.green": "Sent",
   "contacts.filters.red": "Pending",
+  "contacts.sort.tooltip": "Apply filter asc/des",
   "contacts.columns.name": "Name",
   "contacts.columns.company": "Company",
   "contacts.columns.email": "Email",
