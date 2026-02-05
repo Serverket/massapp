@@ -17,15 +17,48 @@ export function TemplatePicker({
   )
 
   const selectedTemplate = useMemo(() => templates.find((template) => template.id === selectedTemplateId) || null, [selectedTemplateId, templates])
+  const applyTooltip = t('templates.apply')
+  const clearTooltip = t('templates.clear')
+  const applyDisabled = !selectedTemplate
 
   return (
     <section className="flex flex-col gap-3 rounded-xl border border-slate-700/60 bg-slate-900/60 p-4">
-      <div className="flex flex-wrap items-center gap-2 sm:justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col">
           <h3 className="text-sm font-semibold text-slate-100">{t('templates.title')}</h3>
           <p className="text-xs text-slate-400">{t('templates.subtitle')}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 rounded-lg border border-slate-700/60 bg-slate-900/40 px-2 py-1">
+            <button
+              type="button"
+              onClick={() => onApply(selectedTemplate?.id)}
+              disabled={applyDisabled}
+              title={applyTooltip}
+              aria-label={applyTooltip}
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-md text-base transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 ${
+                applyDisabled
+                  ? 'cursor-not-allowed opacity-40'
+                  : 'text-emerald-300 hover:text-emerald-200'
+              }`}
+            >
+              <span aria-hidden="true">✅</span>
+            </button>
+            <button
+              type="button"
+              onClick={onClear}
+              disabled={!selectedTemplateId}
+              title={clearTooltip}
+              aria-label={clearTooltip}
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-md text-base transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 ${
+                !selectedTemplateId
+                  ? 'cursor-not-allowed opacity-40'
+                  : 'text-amber-300 hover:text-amber-200'
+              }`}
+            >
+              <span aria-hidden="true">🧹</span>
+            </button>
+          </div>
           <button
             type="button"
             onClick={onManage}
@@ -78,22 +111,6 @@ export function TemplatePicker({
               <p className="whitespace-pre-wrap rounded-lg border border-slate-700/50 bg-slate-900/50 px-3 py-3 text-sm text-slate-100">
                 {selectedTemplate.body}
               </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onApply(selectedTemplate.id)}
-                  className="inline-flex items-center justify-center rounded-lg bg-blue-500/20 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-blue-200 transition hover:bg-blue-500/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
-                >
-                  {t('templates.apply')}
-                </button>
-                <button
-                  type="button"
-                  onClick={onClear}
-                  className="inline-flex items-center justify-center rounded-lg border border-slate-700/60 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-300 transition hover:border-slate-500/70 hover:text-slate-100"
-                >
-                  {t('templates.clear')}
-                </button>
-              </div>
             </div>
           ) : null}
         </>
