@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from './i18n/useTranslation.js'
 import {
   fetchTemplates,
@@ -558,7 +559,58 @@ function App() {
   const [aiSuggestionError, setAiSuggestionError] = useState(null)
   const [aiSuggestionVisible, setAiSuggestionVisible] = useState(false)
   const [aiContactPreview, setAiContactPreview] = useState(null)
+  const aiSuggestionAnchorRef = useRef(null)
+  const [aiSuggestionPosition, setAiSuggestionPosition] = useState(null)
   const aiConfigured = canSuggestPersonalization()
+  const portalTarget = typeof document !== 'undefined' ? document.body : null
+  const [anchorInView, setAnchorInView] = useState(true)
+
+  const syncSuggestionMetrics = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    const anchor = aiSuggestionAnchorRef.current
+    if (!anchor) {
+      setAnchorInView(true)
+      setAiSuggestionPosition(null)
+      return
+    }
+
+    const rect = anchor.getBoundingClientRect()
+    const fullyVisible = rect.top >= 0 && rect.bottom <= window.innerHeight
+    setAnchorInView(fullyVisible)
+
+    if (!aiSuggestionVisible) {
+      setAiSuggestionPosition(null)
+      return
+    }
+
+    if (fullyVisible) {
+      setAiSuggestionPosition({
+        top: Math.min(rect.bottom + 8, window.innerHeight - 24),
+        right: Math.max(window.innerWidth - rect.right, 12),
+        width: Math.min(rect.width, 384),
+      })
+    } else {
+      setAiSuggestionPosition(null)
+    }
+  }, [aiSuggestionVisible])
+
+  useEffect(() => {
+    syncSuggestionMetrics()
+    if (typeof window === 'undefined') {
+      return
+    }
+    const handle = () => syncSuggestionMetrics()
+    window.addEventListener('scroll', handle, true)
+    window.addEventListener('resize', handle)
+
+    return () => {
+      window.removeEventListener('scroll', handle, true)
+      window.removeEventListener('resize', handle)
+    }
+  }, [syncSuggestionMetrics])
+
 
   const modeDetails = useMemo(() => {
     const config = LINK_MODES[linkMode] ?? LINK_MODES.web
@@ -1075,6 +1127,15 @@ function App() {
 
   const handleDismissAiSuggestion = useCallback(() => {
     setAiSuggestionVisible(false)
+    setAiSuggestionPosition(null)
+  }, [])
+
+  const handleDockedSuggestionFocus = useCallback(() => {
+    const anchor = aiSuggestionAnchorRef.current
+    if (!anchor) {
+      return
+    }
+    anchor.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [])
 
   const templateMap = useMemo(() => {
@@ -1103,6 +1164,10 @@ function App() {
   const aiButtonDisabled = aiSuggestionLoading
   const showAiButton = trimmedMessage.length > 0
   const aiButtonActive = aiEligible && aiConfigured
+  const suggestionReady = Boolean(aiSuggestion) && !aiSuggestionLoading && !aiSuggestionError
+  const suggestionFailed = Boolean(aiSuggestionError) && !aiSuggestionLoading && !aiSuggestion
+  const showAnchoredSuggestion = aiSuggestionVisible && anchorInView
+  const showDockedSuggestion = aiSuggestionVisible && !anchorInView
 
   const statusMeta = useMemo(() => {
     const meta = [
@@ -1590,7 +1655,7 @@ function App() {
             </div>
             <label className="flex flex-col gap-2 text-sm">
               <span className="font-semibold text-slate-200">{messageLabel}</span>
-              <div className="relative">
+              <div ref={aiSuggestionAnchorRef} className="relative">
                 <textarea
                   value={messageBody}
                   onChange={(event) => {
@@ -1629,94 +1694,156 @@ function App() {
                     </button>
                   </div>
                 ) : null}
-                {aiSuggestionVisible ? (
-                  <div className="absolute right-0 z-20 mt-2 w-full max-w-md space-y-3 rounded-xl border border-slate-700/70 bg-slate-950/95 p-4 shadow-xl shadow-slate-950/50">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-semibold text-slate-100">{aiPreviewTitle}</span>
-                        {aiContactLabel ? <span className="text-xs text-slate-400">{aiContactLabel}</span> : null}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleDismissAiSuggestion}
-                        className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-700/60 text-xs text-slate-400 transition hover:border-slate-500/70 hover:text-slate-200"
-                        aria-label={aiDismissLabel}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    {aiSuggestionLoading ? (
-                      <p className="flex items-center gap-2 text-xs text-slate-400">
-                        <span className="inline-flex h-3 w-3 animate-spin rounded-full border border-slate-600 border-t-amber-300" aria-hidden="true" />
-                        {aiLoadingLabel}
-                      </p>
-                    ) : aiSuggestionError ? (
-                      <div className="space-y-3">
-                        <p className="text-xs text-rose-300">{t('ai.suggest.error', { message: aiSuggestionError.message })}</p>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={handleRequestAiSuggestion}
-                            className="inline-flex items-center gap-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-amber-200 transition hover:border-amber-300/70 hover:bg-amber-500/20"
-                          >
-                            {t('ai.suggest.retry')}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleDismissAiSuggestion}
-                            className="inline-flex items-center gap-2 rounded-lg border border-slate-700/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-300 transition hover:border-slate-500/70 hover:text-slate-100"
-                          >
-                            {aiDismissLabel}
-                          </button>
+              </div>
+                {showAnchoredSuggestion && aiSuggestionPosition && portalTarget
+                ? createPortal(
+                    <div
+                      className="fixed z-[4000] space-y-3 rounded-xl border border-slate-700/70 bg-slate-950/95 p-4 shadow-2xl shadow-slate-950/60"
+                      style={{
+                        top: aiSuggestionPosition.top,
+                        right: aiSuggestionPosition.right,
+                        width: aiSuggestionPosition.width,
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-semibold text-slate-100">{aiPreviewTitle}</span>
+                          {aiContactLabel ? <span className="text-xs text-slate-400">{aiContactLabel}</span> : null}
                         </div>
+                        <button
+                          type="button"
+                          onClick={handleDismissAiSuggestion}
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-700/60 text-xs text-slate-400 transition hover:border-slate-500/70 hover:text-slate-200"
+                          aria-label={aiDismissLabel}
+                        >
+                          ✕
+                        </button>
                       </div>
-                    ) : aiSuggestion ? (
-                      <div className="space-y-3">
-                        {aiSuggestion.summary ? (
-                          <p className="text-xs text-slate-300">{aiSummaryLabel}: {aiSuggestion.summary}</p>
-                        ) : null}
-                        {aiSuggestion.highlights && aiSuggestion.highlights.length > 0 ? (
-                          <div className="space-y-1">
-                            <span className="text-[0.7rem] font-semibold uppercase tracking-wide text-amber-300">{aiHighlightsLabel}</span>
-                            <ul className="space-y-1 text-xs text-amber-200">
-                              {aiSuggestion.highlights.slice(0, 4).map((item) => (
-                                <li key={item}>{item}</li>
-                              ))}
-                            </ul>
+                      {aiSuggestionLoading ? (
+                        <p className="flex items-center gap-2 text-xs text-slate-400">
+                          <span className="inline-flex h-3 w-3 animate-spin rounded-full border border-slate-600 border-t-amber-300" aria-hidden="true" />
+                          {aiLoadingLabel}
+                        </p>
+                      ) : aiSuggestionError ? (
+                        <div className="space-y-3">
+                          <p className="text-xs text-rose-300">{t('ai.suggest.error', { message: aiSuggestionError.message })}</p>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleRequestAiSuggestion}
+                              className="inline-flex items-center gap-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-amber-200 transition hover:border-amber-300/70 hover:bg-amber-500/20"
+                            >
+                              {t('ai.suggest.retry')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleDismissAiSuggestion}
+                              className="inline-flex items-center gap-2 rounded-lg border border-slate-700/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-300 transition hover:border-slate-500/70 hover:text-slate-100"
+                            >
+                              {aiDismissLabel}
+                            </button>
+                          </div>
+                        </div>
+                      ) : aiSuggestion ? (
+                        <div className="space-y-3">
+                          {aiSuggestion.summary ? (
+                            <p className="text-xs text-slate-300">{aiSummaryLabel}: {aiSuggestion.summary}</p>
+                          ) : null}
+                          {aiSuggestion.highlights && aiSuggestion.highlights.length > 0 ? (
+                            <div className="space-y-1">
+                              <span className="text-[0.7rem] font-semibold uppercase tracking-wide text-amber-300">{aiHighlightsLabel}</span>
+                              <ul className="space-y-1 text-xs text-amber-200">
+                                {aiSuggestion.highlights.slice(0, 4).map((item) => (
+                                  <li key={item}>{item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                          <div className="whitespace-pre-wrap rounded-lg border border-slate-700/70 bg-slate-900/60 p-3 text-sm text-slate-100">
+                            {aiSuggestion.message}
+                          </div>
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={handleApplyAiSuggestion}
+                              className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-200 transition hover:border-emerald-300/70 hover:bg-emerald-500/20"
+                            >
+                              {aiApplyLabel}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleDismissAiSuggestion}
+                              className="inline-flex items-center gap-2 rounded-lg border border-slate-700/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-300 transition hover:border-slate-500/70 hover:text-slate-100"
+                            >
+                              {aiDismissLabel}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleRequestAiSuggestion}
+                          className="inline-flex items-center gap-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-amber-200 transition hover:border-amber-300/70 hover:bg-amber-500/20"
+                        >
+                          {t('ai.suggest.generate')}
+                        </button>
+                      )}
+                    </div>,
+                    portalTarget,
+                  )
+                : null}
+                {showDockedSuggestion && portalTarget
+                  ? createPortal(
+                      <div className="fixed bottom-6 right-6 z-[4000] flex flex-col items-end gap-2">
+                        <button
+                          type="button"
+                          onClick={handleDockedSuggestionFocus}
+                          className="inline-flex items-center gap-2 rounded-lg border border-slate-700/70 bg-slate-950/90 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-100 shadow-lg shadow-slate-950/50 transition hover:border-slate-500/70 hover:text-slate-50"
+                          aria-label={aiPreviewTitle}
+                        >
+                          {aiSuggestionLoading ? (
+                            <>
+                              <span
+                                className="inline-flex h-3 w-3 animate-spin rounded-full border border-slate-600 border-t-amber-300"
+                                aria-hidden="true"
+                              />
+                              <span>{aiLoadingLabel}</span>
+                            </>
+                          ) : suggestionFailed ? (
+                            <>
+                              <span className="inline-flex h-2.5 w-2.5 rounded-full bg-rose-400" aria-hidden="true" />
+                              <span>{aiPreviewTitle}</span>
+                            </>
+                          ) : suggestionReady ? (
+                            <>
+                              <span className="relative inline-flex h-2.5 w-2.5" aria-hidden="true">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60" />
+                                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                              </span>
+                              <span>{aiApplyLabel}</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="inline-flex h-2.5 w-2.5 rounded-full bg-amber-300/80" aria-hidden="true" />
+                              <span>{aiPreviewTitle}</span>
+                            </>
+                          )}
+                        </button>
+                        {suggestionReady && aiSuggestion?.summary ? (
+                          <div className="max-w-xs rounded-lg border border-slate-700/60 bg-slate-900/85 px-3 py-2 text-xs text-slate-300 shadow shadow-slate-950/40">
+                            <span className="font-semibold text-slate-100">{aiSummaryLabel}:</span>{' '}
+                            <span className="block break-words text-slate-200">{aiSuggestion.summary}</span>
                           </div>
                         ) : null}
-                        <div className="rounded-lg border border-slate-700/70 bg-slate-900/60 p-3 text-sm text-slate-100 whitespace-pre-wrap">
-                          {aiSuggestion.message}
-                        </div>
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={handleApplyAiSuggestion}
-                            className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-200 transition hover:border-emerald-300/70 hover:bg-emerald-500/20"
-                          >
-                            {aiApplyLabel}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleDismissAiSuggestion}
-                            className="inline-flex items-center gap-2 rounded-lg border border-slate-700/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-300 transition hover:border-slate-500/70 hover:text-slate-100"
-                          >
-                            {aiDismissLabel}
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleRequestAiSuggestion}
-                        className="inline-flex items-center gap-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-amber-200 transition hover:border-amber-300/70 hover:bg-amber-500/20"
-                      >
-                        {t('ai.suggest.generate')}
-                      </button>
-                    )}
-                  </div>
-                ) : null}
-              </div>
+                        {suggestionFailed && aiSuggestionError ? (
+                          <div className="max-w-xs rounded-lg border border-rose-500/60 bg-rose-500/10 px-3 py-2 text-xs text-rose-200 shadow shadow-rose-900/40">
+                            {t('ai.suggest.error', { message: aiSuggestionError.message })}
+                          </div>
+                        ) : null}
+                      </div>,
+                      portalTarget,
+                    )
+                  : null}
             </label>
             <TemplatePicker
               t={t}
