@@ -1,5 +1,6 @@
 import { startTransition, useEffect, useMemo, useState } from 'react'
 import { upsertTemplate, removeTemplate } from '../lib/storage.js'
+import { MODAL_CLOSE_ICON_BUTTON, MODAL_CLOSE_PRIMARY_BUTTON } from '../lib/uiStyles.js'
 
 function normalizeLocale(value) {
   return value ? value.trim().toLowerCase() : null
@@ -120,14 +121,34 @@ export function TemplateManagerModal({ t, open, templates, onClose, onSaved, onD
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-8" role="dialog" aria-modal="true">
-      <div className="relative flex w-full max-w-3xl flex-col gap-4 rounded-2xl border border-slate-700/60 bg-slate-900/90 p-6 shadow-2xl shadow-slate-950/60 backdrop-blur">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8 bg-slate-950/80"
+      role="dialog"
+      aria-modal="true"
+      onClick={() => {
+        if (typeof onClose === 'function') {
+          onClose()
+        }
+      }}
+    >
+      <div
+        className="relative flex flex-col w-full max-w-3xl gap-4 p-6 border shadow-2xl rounded-2xl border-slate-700/60 bg-slate-900/90 shadow-slate-950/60 backdrop-blur"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className={`${MODAL_CLOSE_ICON_BUTTON} absolute right-4 top-4`}
+          aria-label={t('templates.modal.cancel')}
+        >
+          ✕
+        </button>
         <header className="flex flex-col gap-1">
           <h2 className="text-xl font-semibold text-slate-100">{t('templates.modal.title')}</h2>
           <p className="text-sm text-slate-400">{t('templates.modal.subtitle')}</p>
         </header>
         <div className="flex flex-col gap-4 lg:flex-row">
-          <aside className="flex w-full max-w-xs flex-col gap-3 rounded-xl border border-slate-700/60 bg-slate-900/60 p-3">
+          <aside className="flex flex-col w-full max-w-xs gap-3 p-3 border rounded-xl border-slate-700/60 bg-slate-900/60">
             <button
               type="button"
               onClick={resetForm}
@@ -157,7 +178,7 @@ export function TemplateManagerModal({ t, open, templates, onClose, onSaved, onD
                     >
                       <span className="font-semibold text-slate-100">{template.name}</span>
                       {template.locale ? (
-                        <span className="ml-2 text-xs uppercase tracking-wide text-slate-400">{template.locale}</span>
+                        <span className="ml-2 text-xs tracking-wide uppercase text-slate-400">{template.locale}</span>
                       ) : null}
                     </button>
                   </li>
@@ -165,9 +186,9 @@ export function TemplateManagerModal({ t, open, templates, onClose, onSaved, onD
               </ul>
             )}
           </aside>
-          <form onSubmit={handleSubmit} className="flex w-full flex-col gap-4">
+          <form onSubmit={handleSubmit} className="flex flex-col w-full gap-4">
             <div className="flex flex-col gap-2">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <span className="text-xs font-semibold tracking-wide uppercase text-slate-400">
                 {selectedId ? t('templates.modal.editing') : t('templates.modal.new')}
               </span>
               <label className="flex flex-col gap-2 text-sm text-slate-300">
@@ -176,7 +197,7 @@ export function TemplateManagerModal({ t, open, templates, onClose, onSaved, onD
                   type="text"
                   value={name}
                   onChange={(event) => setName(event.target.value)}
-                  className="w-full rounded-xl border border-slate-700/60 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+                  className="w-full px-3 py-2 text-sm border rounded-xl border-slate-700/60 bg-slate-900/60 text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
                   placeholder={t('templates.modal.namePlaceholder')}
                 />
               </label>
@@ -186,7 +207,7 @@ export function TemplateManagerModal({ t, open, templates, onClose, onSaved, onD
                   type="text"
                   value={locale}
                   onChange={(event) => setLocale(event.target.value)}
-                  className="w-full rounded-xl border border-slate-700/60 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+                  className="w-full px-3 py-2 text-sm border rounded-xl border-slate-700/60 bg-slate-900/60 text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
                   placeholder={t('templates.modal.localePlaceholder')}
                 />
               </label>
@@ -196,7 +217,7 @@ export function TemplateManagerModal({ t, open, templates, onClose, onSaved, onD
                   value={body}
                   onChange={(event) => setBody(event.target.value)}
                   rows={10}
-                  className="w-full rounded-xl border border-slate-700/60 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+                  className="w-full px-3 py-2 text-sm border rounded-xl border-slate-700/60 bg-slate-900/60 text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
                   placeholder={t('templates.modal.bodyPlaceholder')}
                 />
               </label>
@@ -219,7 +240,7 @@ export function TemplateManagerModal({ t, open, templates, onClose, onSaved, onD
                 <button
                   type="submit"
                   disabled={saving}
-                  className="inline-flex items-center justify-center rounded-lg bg-blue-500/20 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-blue-200 transition hover:bg-blue-500/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold tracking-wide text-blue-200 uppercase transition rounded-lg bg-blue-500/20 hover:bg-blue-500/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {saving ? t('templates.modal.saving') : t('templates.modal.save')}
                 </button>
@@ -228,7 +249,7 @@ export function TemplateManagerModal({ t, open, templates, onClose, onSaved, onD
                     type="button"
                     onClick={handleDelete}
                     disabled={deleting}
-                    className="inline-flex items-center justify-center rounded-lg border border-rose-500/60 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-rose-200 transition hover:border-rose-400/70 hover:bg-rose-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold tracking-wide uppercase transition border rounded-lg border-rose-500/60 text-rose-200 hover:border-rose-400/70 hover:bg-rose-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {deleting ? t('templates.modal.deleting') : t('templates.modal.delete')}
                   </button>
@@ -237,7 +258,7 @@ export function TemplateManagerModal({ t, open, templates, onClose, onSaved, onD
               <button
                 type="button"
                 onClick={onClose}
-                className="inline-flex items-center justify-center rounded-lg border border-slate-700/60 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-slate-300 transition hover:border-slate-500/70 hover:text-slate-100"
+                className={MODAL_CLOSE_PRIMARY_BUTTON}
               >
                 {t('templates.modal.cancel')}
               </button>

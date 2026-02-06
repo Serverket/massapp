@@ -18,6 +18,7 @@ import { LoginForm } from './components/LoginForm.jsx'
 import { TemplateManagerModal } from './components/TemplateManagerModal.jsx'
 import { ContactsModal } from './components/ContactsModal.jsx'
 import { canSuggestPersonalization, suggestTemplatePersonalization } from './lib/templatePersonalizer.js'
+import { MODAL_CLOSE_ICON_BUTTON, MODAL_CLOSE_PRIMARY_BUTTON, MODAL_CONTENT_BASE, MODAL_OVERLAY } from './lib/uiStyles.js'
 
 const LIMIT_LOG = 120
 
@@ -40,7 +41,7 @@ const STATUS_PILL =
   'rounded-full border border-slate-700/60 bg-slate-900/60 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-wide text-slate-300 sm:text-xs'
 
 const LANGUAGE_BUTTON =
-  'inline-flex h-9 items-center justify-center rounded-lg border border-slate-600/60 bg-slate-900/60 px-3 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-slate-400/60 hover:bg-slate-800/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 sm:text-sm'
+  'inline-flex h-9 items-center justify-center rounded-lg border border-slate-600/60 bg-slate-900/60 px-2.5 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-slate-400/60 hover:bg-slate-800/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 sm:px-4 sm:text-sm'
 
 const LOG_LEVEL_STYLES = {
   info: 'border-l-sky-400/70',
@@ -559,11 +560,16 @@ function App() {
   const [aiSuggestionError, setAiSuggestionError] = useState(null)
   const [aiSuggestionVisible, setAiSuggestionVisible] = useState(false)
   const [aiContactPreview, setAiContactPreview] = useState(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [importModalOpen, setImportModalOpen] = useState(false)
+  const [logModalOpen, setLogModalOpen] = useState(false)
   const aiSuggestionAnchorRef = useRef(null)
+  const menuContainerRef = useRef(null)
   const [aiSuggestionPosition, setAiSuggestionPosition] = useState(null)
   const aiConfigured = canSuggestPersonalization()
   const portalTarget = typeof document !== 'undefined' ? document.body : null
   const [anchorInView, setAnchorInView] = useState(true)
+  const renderModal = (content) => (portalTarget ? createPortal(content, portalTarget) : content)
 
   const syncSuggestionMetrics = useCallback(() => {
     if (typeof window === 'undefined') {
@@ -610,6 +616,57 @@ function App() {
       window.removeEventListener('resize', handle)
     }
   }, [syncSuggestionMetrics])
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return undefined
+    }
+
+    const handlePointerDown = (event) => {
+      if (menuContainerRef.current && menuContainerRef.current.contains(event.target)) {
+        return
+      }
+      setMenuOpen(false)
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [menuOpen])
+
+  useEffect(() => {
+    if (!importModalOpen && !logModalOpen) {
+      return undefined
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        if (logModalOpen) {
+          setLogModalOpen(false)
+          return
+        }
+        if (importModalOpen) {
+          setImportModalOpen(false)
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [importModalOpen, logModalOpen])
 
 
   const modeDetails = useMemo(() => {
@@ -752,6 +809,38 @@ function App() {
 
   const handleCloseTemplateManager = useCallback(() => {
     setTemplateManagerOpen(false)
+  }, [])
+
+  const handleMenuToggle = useCallback(() => {
+    setMenuOpen((state) => !state)
+  }, [])
+
+  const handleMenuOpenContacts = useCallback(() => {
+    setMenuOpen(false)
+    handleOpenContactsModal()
+  }, [handleOpenContactsModal])
+
+  const handleMenuManageTemplates = useCallback(() => {
+    setMenuOpen(false)
+    handleOpenTemplateManager()
+  }, [handleOpenTemplateManager])
+
+  const handleMenuOpenImport = useCallback(() => {
+    setMenuOpen(false)
+    setImportModalOpen(true)
+  }, [])
+
+  const handleMenuOpenLog = useCallback(() => {
+    setMenuOpen(false)
+    setLogModalOpen(true)
+  }, [])
+
+  const handleCloseImportModal = useCallback(() => {
+    setImportModalOpen(false)
+  }, [])
+
+  const handleCloseLogModal = useCallback(() => {
+    setLogModalOpen(false)
   }, [])
 
   const loadFlaggedContacts = useCallback(async () => {
@@ -1236,6 +1325,12 @@ function App() {
   }, [supabaseHealth?.updatedAt, t])
 
   const appTitle = t('app.title')
+  const menuLabel = t('menu.toggle')
+  const menuContactsLabel = t('menu.goToContacts')
+  const menuTemplatesLabel = t('menu.openTemplates')
+  const menuImportLabel = t('menu.openImport')
+  const menuLogLabel = t('menu.openLog')
+  const menuCloseLabel = t('menu.close')
   const launcherTitle = t('launcher.title')
   const launcherDescription = t('launcher.description')
   const recipientsLabel = t('launcher.recipientsLabel')
@@ -1264,6 +1359,7 @@ function App() {
 
   const languageTarget = locale === 'en' ? 'es' : 'en'
   const languageButtonLabel = languageTarget === 'es' ? t('actions.switchToSpanish') : t('actions.switchToEnglish')
+  const languageButtonShortLabel = languageTarget.toUpperCase()
   const signedInEmail = session?.user?.email ?? ''
   const signedInLabel = signedInEmail ? t('status.auth.signedInAs', { email: signedInEmail }) : t('status.auth.signedInUnknown')
   const signOutLabel = signOutLoading ? t('login.signingOut') : t('login.signOut')
@@ -1579,7 +1675,7 @@ function App() {
   }
   return (
     <div className="w-full px-4 py-10 mx-auto max-w-7xl text-slate-100 sm:px-6 lg:px-8">
-      <header className="flex flex-col gap-6 pb-6 border-b border-slate-800/60">
+      <header className="flex flex-col gap-6 border-b border-slate-800/60">
         <div className="flex items-center gap-3 sm:gap-4">
           <img
             src="/massapp-logo.svg"
@@ -1589,13 +1685,74 @@ function App() {
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{appTitle}</h1>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <div ref={menuContainerRef} className="relative">
+              <button
+                type="button"
+                onClick={handleMenuToggle}
+                className={`${LANGUAGE_BUTTON} min-w-[2.5rem]`}
+                title={menuLabel}
+                aria-label={menuLabel}
+                aria-haspopup="true"
+                aria-expanded={menuOpen}
+              >
+                <span aria-hidden="true">☰</span>
+              </button>
+              {menuOpen ? (
+                <div className="absolute left-0 z-30 w-56 p-2 mt-2 border shadow-xl rounded-xl border-slate-700/70 bg-slate-950/95 shadow-slate-950/60">
+                  <button
+                    type="button"
+                    onClick={handleMenuOpenContacts}
+                    className="flex items-center justify-between w-full px-3 py-2 text-sm transition rounded-lg text-slate-200 hover:bg-slate-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+                  >
+                    {menuContactsLabel}
+                    <span aria-hidden="true">👥</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleMenuManageTemplates}
+                    className="flex items-center justify-between w-full px-3 py-2 text-sm transition rounded-lg text-slate-200 hover:bg-slate-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+                  >
+                    {menuTemplatesLabel}
+                    <span aria-hidden="true">📝</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleMenuOpenImport}
+                    className="flex items-center justify-between w-full px-3 py-2 text-sm transition rounded-lg text-slate-200 hover:bg-slate-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+                  >
+                    {menuImportLabel}
+                    <span aria-hidden="true">📥</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleMenuOpenLog}
+                    className="flex items-center justify-between w-full px-3 py-2 text-sm transition rounded-lg text-slate-200 hover:bg-slate-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+                  >
+                    {menuLogLabel}
+                    <span aria-hidden="true">📜</span>
+                  </button>
+                  <div className="h-px my-1 bg-slate-700/60" />
+                  <button
+                    type="button"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex items-center justify-between w-full px-3 py-2 text-sm transition rounded-lg text-slate-400 hover:bg-slate-800/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+                  >
+                    {menuCloseLabel}
+                    <span aria-hidden="true">✕</span>
+                  </button>
+                </div>
+              ) : null}
+            </div>
             <button
               type="button"
-              className={`${LANGUAGE_BUTTON} w-full max-w-xs sm:w-auto sm:max-w-none`}
+              className={LANGUAGE_BUTTON}
               onClick={handleToggleLocale}
+              title={languageButtonLabel}
+              aria-label={languageButtonLabel}
             >
-              {languageButtonLabel}
+              <span className="sm:hidden">{languageButtonShortLabel}</span>
+              <span className="hidden sm:inline">{languageButtonLabel}</span>
             </button>
             <button type="button" onClick={handleSignOut} className={BUTTON_DANGER} disabled={signOutLoading}>
               {signOutLabel}
@@ -1677,7 +1834,7 @@ function App() {
                   className="min-h-[9rem] w-full rounded-xl border border-slate-700/60 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
                 />
                 {showAiButton ? (
-                  <div className="absolute top-2 right-2 flex items-center gap-2">
+                  <div className="absolute flex items-center gap-2 top-2 right-2">
                     <button
                       type="button"
                       onClick={handleRequestAiSuggestion}
@@ -1713,7 +1870,7 @@ function App() {
                         <button
                           type="button"
                           onClick={handleDismissAiSuggestion}
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-700/60 text-xs text-slate-400 transition hover:border-slate-500/70 hover:text-slate-200"
+                          className="inline-flex items-center justify-center w-6 h-6 text-xs transition border rounded-full border-slate-700/60 text-slate-400 hover:border-slate-500/70 hover:text-slate-200"
                           aria-label={aiDismissLabel}
                         >
                           ✕
@@ -1721,7 +1878,7 @@ function App() {
                       </div>
                       {aiSuggestionLoading ? (
                         <p className="flex items-center gap-2 text-xs text-slate-400">
-                          <span className="inline-flex h-3 w-3 animate-spin rounded-full border border-slate-600 border-t-amber-300" aria-hidden="true" />
+                          <span className="inline-flex w-3 h-3 border rounded-full animate-spin border-slate-600 border-t-amber-300" aria-hidden="true" />
                           {aiLoadingLabel}
                         </p>
                       ) : aiSuggestionError ? (
@@ -1759,7 +1916,7 @@ function App() {
                               </ul>
                             </div>
                           ) : null}
-                          <div className="whitespace-pre-wrap rounded-lg border border-slate-700/70 bg-slate-900/60 p-3 text-sm text-slate-100">
+                          <div className="p-3 text-sm whitespace-pre-wrap border rounded-lg border-slate-700/70 bg-slate-900/60 text-slate-100">
                             {aiSuggestion.message}
                           </div>
                           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -1798,13 +1955,13 @@ function App() {
                         <button
                           type="button"
                           onClick={handleDockedSuggestionFocus}
-                          className="inline-flex items-center gap-2 rounded-lg border border-slate-700/70 bg-slate-950/90 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-100 shadow-lg shadow-slate-950/50 transition hover:border-slate-500/70 hover:text-slate-50"
+                          className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold tracking-wide uppercase transition border rounded-lg shadow-lg border-slate-700/70 bg-slate-950/90 text-slate-100 shadow-slate-950/50 hover:border-slate-500/70 hover:text-slate-50"
                           aria-label={aiPreviewTitle}
                         >
                           {aiSuggestionLoading ? (
                             <>
                               <span
-                                className="inline-flex h-3 w-3 animate-spin rounded-full border border-slate-600 border-t-amber-300"
+                                className="inline-flex w-3 h-3 border rounded-full animate-spin border-slate-600 border-t-amber-300"
                                 aria-hidden="true"
                               />
                               <span>{aiLoadingLabel}</span>
@@ -1817,7 +1974,7 @@ function App() {
                           ) : suggestionReady ? (
                             <>
                               <span className="relative inline-flex h-2.5 w-2.5" aria-hidden="true">
-                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60" />
+                                <span className="absolute inline-flex w-full h-full rounded-full animate-ping bg-emerald-400/60" />
                                 <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
                               </span>
                               <span>{aiApplyLabel}</span>
@@ -1830,13 +1987,13 @@ function App() {
                           )}
                         </button>
                         {suggestionReady && aiSuggestion?.summary ? (
-                          <div className="max-w-xs rounded-lg border border-slate-700/60 bg-slate-900/85 px-3 py-2 text-xs text-slate-300 shadow shadow-slate-950/40">
+                          <div className="max-w-xs px-3 py-2 text-xs border rounded-lg shadow border-slate-700/60 bg-slate-900/85 text-slate-300 shadow-slate-950/40">
                             <span className="font-semibold text-slate-100">{aiSummaryLabel}:</span>{' '}
                             <span className="block break-words text-slate-200">{aiSuggestion.summary}</span>
                           </div>
                         ) : null}
                         {suggestionFailed && aiSuggestionError ? (
-                          <div className="max-w-xs rounded-lg border border-rose-500/60 bg-rose-500/10 px-3 py-2 text-xs text-rose-200 shadow shadow-rose-900/40">
+                          <div className="max-w-xs px-3 py-2 text-xs border rounded-lg shadow border-rose-500/60 bg-rose-500/10 text-rose-200 shadow-rose-900/40">
                             {t('ai.suggest.error', { message: aiSuggestionError.message })}
                           </div>
                         ) : null}
@@ -2032,36 +2189,110 @@ function App() {
 
           {previewMoreLabel ? <p className="text-xs text-slate-500">{previewMoreLabel}</p> : null}
         </article>
-
-        <ContactsImport t={t} onImportComplete={handleContactsImported} />
-
-        <article className={`${CARD_BASE} gap-5`}>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
-            <h2 className="text-lg font-semibold text-slate-100">{logTitle}</h2>
-          </div>
-          <ul className="flex flex-col gap-2 p-0 overflow-y-auto list-none max-h-72 md:max-h-80">
-            {statusLog.map((entry) => (
-              <li
-                key={entry.id}
-                className={`grid grid-cols-[auto_1fr] items-start gap-3 rounded-xl border border-slate-700/40 bg-slate-900/60 px-3 py-2 text-sm shadow-sm border-l-4 ${LOG_LEVEL_STYLES[entry.level] || LOG_LEVEL_STYLES.info}`}
-              >
-                <span className="font-mono text-xs text-slate-400">{formatTime(entry.timestamp)}</span>
-                {(() => {
-                  const fullMessage = (entry.message ?? '').replace(/\s+/g, ' ').trim()
-                  const displayMessage = truncateLogMessage(fullMessage)
-                  return (
-                    <span className="min-w-0 text-sm text-slate-100">
-                      <span className="block break-words sm:overflow-hidden sm:text-ellipsis sm:whitespace-nowrap" title={fullMessage}>
-                        {displayMessage}
-                      </span>
-                    </span>
-                  )
-                })()}
-              </li>
-            ))}
-          </ul>
-        </article>
       </main>
+      {importModalOpen
+        ? renderModal(
+            <div
+              className={MODAL_OVERLAY}
+              role="dialog"
+              aria-modal="true"
+              aria-label={t('contacts.import.title')}
+              onClick={handleCloseImportModal}
+            >
+              <div
+                className={`${MODAL_CONTENT_BASE} max-w-3xl`}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  onClick={handleCloseImportModal}
+                  className={`${MODAL_CLOSE_ICON_BUTTON} absolute right-4 top-4`}
+                  aria-label={menuCloseLabel}
+                >
+                  ✕
+                </button>
+                <div className="-mr-1 max-h-[70vh] overflow-y-auto pr-1">
+                  <ContactsImport t={t} onImportComplete={handleContactsImported} />
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleCloseImportModal}
+                    className={MODAL_CLOSE_PRIMARY_BUTTON}
+                  >
+                    {t('contacts.modal.close')}
+                  </button>
+                </div>
+              </div>
+            </div>,
+          )
+        : null}
+      {logModalOpen
+        ? renderModal(
+            <div
+              className={MODAL_OVERLAY}
+              role="dialog"
+              aria-modal="true"
+              aria-label={logTitle}
+              onClick={handleCloseLogModal}
+            >
+              <div
+                className={`${MODAL_CONTENT_BASE} max-w-3xl`}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  onClick={handleCloseLogModal}
+                  className={`${MODAL_CLOSE_ICON_BUTTON} absolute right-4 top-4 z-10`}
+                  aria-label={menuCloseLabel}
+                >
+                  ✕
+                </button>
+                <div className="flex flex-col gap-4 -mr-1 max-h-[70vh] overflow-y-auto pr-1">
+                  <article className={`${CARD_BASE} gap-5`}>
+                    <div className="flex flex-col">
+                      <h2 className="text-lg font-semibold text-slate-100">{logTitle}</h2>
+                    </div>
+                    {statusLog.length === 0 ? (
+                      <p className="text-sm text-slate-400">{t('log.empty')}</p>
+                    ) : (
+                      <ul className="flex flex-col gap-2 p-0 list-none">
+                        {statusLog.map((entry) => (
+                          <li
+                            key={entry.id}
+                            className={`grid grid-cols-[auto_1fr] items-start gap-3 rounded-xl border border-slate-700/40 bg-slate-900/60 px-3 py-2 text-sm shadow-sm border-l-4 ${LOG_LEVEL_STYLES[entry.level] || LOG_LEVEL_STYLES.info}`}
+                          >
+                            <span className="font-mono text-xs text-slate-400">{formatTime(entry.timestamp)}</span>
+                            {(() => {
+                              const fullMessage = (entry.message ?? '').replace(/\s+/g, ' ').trim()
+                              const displayMessage = truncateLogMessage(fullMessage)
+                              return (
+                                <span className="min-w-0 text-sm text-slate-100">
+                                  <span className="block break-words sm:overflow-hidden sm:text-ellipsis sm:whitespace-nowrap" title={fullMessage}>
+                                    {displayMessage}
+                                  </span>
+                                </span>
+                              )
+                            })()}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </article>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleCloseLogModal}
+                      className={MODAL_CLOSE_PRIMARY_BUTTON}
+                    >
+                      {t('contacts.modal.close')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>,
+          )
+        : null}
       <ContactsModal
         t={t}
         open={contactsModalOpen}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { updateContact } from '../lib/storage.js'
+import { MODAL_CLOSE_ICON_BUTTON, MODAL_CLOSE_PRIMARY_BUTTON } from '../lib/uiStyles.js'
 
 const EMPTY_FORM = {
   full_name: '',
@@ -103,8 +104,16 @@ export function ContactEditModal({ t, open, contact, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-8" role="dialog" aria-modal="true">
-      <div className="relative w-full max-w-xl rounded-2xl border border-slate-700/60 bg-slate-900/90 p-6 shadow-2xl shadow-slate-950/60 backdrop-blur">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-8"
+      role="dialog"
+      aria-modal="true"
+      onClick={handleClose}
+    >
+      <div
+        className="relative w-full max-w-xl rounded-2xl border border-slate-700/60 bg-slate-900/90 p-6 shadow-2xl shadow-slate-950/60 backdrop-blur"
+        onClick={(event) => event.stopPropagation()}
+      >
         <header className="flex items-start justify-between gap-3">
           <div className="flex flex-col gap-1">
             <h2 className="text-xl font-semibold text-slate-100">{t('contacts.edit.title')}</h2>
@@ -113,7 +122,7 @@ export function ContactEditModal({ t, open, contact, onClose, onSaved }) {
           <button
             type="button"
             onClick={handleClose}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-700/60 text-slate-300 transition hover:border-slate-500/70 hover:text-slate-100"
+            className={MODAL_CLOSE_ICON_BUTTON}
             aria-label={t('contacts.edit.cancel')}
           >
             ✕
@@ -183,7 +192,7 @@ export function ContactEditModal({ t, open, contact, onClose, onSaved }) {
             <button
               type="button"
               onClick={handleClose}
-              className="inline-flex items-center justify-center rounded-lg border border-slate-700/60 px-4 py-2 text-sm font-semibold uppercase tracking-wide text-slate-300 transition hover:border-slate-500/70 hover:text-slate-100"
+              className={MODAL_CLOSE_PRIMARY_BUTTON}
               disabled={saving}
             >
               {t('contacts.edit.cancel')}
